@@ -1,0 +1,7 @@
+return_reason_code,return_reason,responsibility
+DAMAGED,Item damaged,Carrier
+DEFECTIVE,Defective item,Seller
+WRONG_ITEM,Wrong item delivered,Seller
+NO_LONGER_NEEDED,No longer needed,Customer
+SIZE_FIT,Size/Fit issue,Customer
+LATE_DELIVERY,Late delivery,Carrier

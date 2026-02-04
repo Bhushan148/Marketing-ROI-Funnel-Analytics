@@ -1,0 +1,6 @@
+return_status_code,return_status
+REQUESTED,Requested
+PICKED_UP,Picked up
+RECEIVED,Received at warehouse
+REFUNDED,Refunded
+REJECTED,Rejected

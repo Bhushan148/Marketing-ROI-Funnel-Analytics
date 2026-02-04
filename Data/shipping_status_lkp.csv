@@ -1,0 +1,7 @@
+shipping_status_code,shipping_status
+LABEL_CREATED,Label created
+IN_TRANSIT,In transit
+OUT_FOR_DELIVERY,Out for delivery
+DELIVERED,Delivered
+DELAYED,Delayed
+RETURN_TO_ORIGIN,Return to origin

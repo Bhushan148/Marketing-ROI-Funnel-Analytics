@@ -1,0 +1,7 @@
+payment_method_code,payment_method,payment_category
+UPI,UPI,Digital
+CC,Credit Card,Card
+DC,Debit Card,Card
+NB,NetBanking,Bank
+COD,Cash on Delivery,Cash
+WALLET,Wallet,Digital

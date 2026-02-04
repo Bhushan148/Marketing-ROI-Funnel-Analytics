@@ -1,0 +1,7 @@
+order_status_code,order_status,status_group
+PLACED,Placed,OPEN
+CONFIRMED,Confirmed,OPEN
+PACKED,Packed,IN_PROGRESS
+SHIPPED,Shipped,IN_PROGRESS
+DELIVERED,Delivered,CLOSED
+CANCELLED,Cancelled,CLOSED

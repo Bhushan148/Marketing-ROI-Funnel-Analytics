@@ -1,0 +1,21 @@
+sub_category_code,sub_category_name,category_code
+SUB_MOB,Mobiles & Accessories,CAT_ELEC
+SUB_COMP,Computers & Accessories,CAT_ELEC
+SUB_AUDIO,Audio,CAT_ELEC
+SUB_MEN,Men's Clothing,CAT_FASH
+SUB_WOM,Women's Clothing,CAT_FASH
+SUB_FOOT,Footwear,CAT_FASH
+SUB_KITCH,Kitchen,CAT_HOME
+SUB_FURN,Furniture,CAT_HOME
+SUB_DECOR,Home Decor,CAT_HOME
+SUB_SKIN,Skin Care,CAT_BEAU
+SUB_HAIR,Hair Care,CAT_BEAU
+SUB_MAKE,Makeup,CAT_BEAU
+SUB_FIC,Fiction,CAT_BOOK
+SUB_EDU,Education,CAT_BOOK
+SUB_SNACK,Snacks,CAT_GROC
+SUB_STAP,Staples,CAT_GROC
+SUB_GYM,Gym Equipment,CAT_SPORT
+SUB_OUT,Outdoor,CAT_SPORT
+SUB_WASH,Washing Machines,CAT_APPL
+SUB_FRIDGE,Refrigerators,CAT_APPL
