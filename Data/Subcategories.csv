@@ -1,0 +1,14 @@
+SubcategoryId,CategoryId,SubcategoryName
+1,1,Mobiles
+2,1,Audio
+3,1,Computers
+4,2,Men
+5,2,Women
+6,3,Kitchen
+7,3,Home Decor
+8,4,Skincare
+9,4,Personal Care
+10,5,Beverages
+11,5,Snacks
+12,6,Large Appliances
+13,6,Small Appliances

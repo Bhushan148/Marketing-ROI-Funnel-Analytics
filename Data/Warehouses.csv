@@ -1,0 +1,5 @@
+WarehouseId,WarehouseName,WarehouseType,GeoId,IsActive
+1,Mumbai FC,FC,21,1
+2,New Delhi FC,FC,1,1
+3,Bengaluru FC,FC,11,1
+4,Hyderabad FC,FC,15,1

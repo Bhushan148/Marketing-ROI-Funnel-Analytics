@@ -1,0 +1,21 @@
+SellerId,SellerName,SellerType,SellerRating,SellerSinceDateKey
+1,Seller 01 India,Reseller,4.02,20200925
+2,Seller 02 India,Distributor,4.38,20170531
+3,Seller 03 India,Brand,3.49,20190219
+4,Seller 04 India,Brand,3.77,20191221
+5,Seller 05 India,Distributor,4.07,20180902
+6,Seller 06 India,Brand,3.82,20190821
+7,Seller 07 India,Brand,4.06,20171213
+8,Seller 08 India,Brand,3.48,20180102
+9,Seller 09 India,Brand,4.85,20190917
+10,Seller 10 India,Brand,4.01,20180504
+11,Seller 11 India,Brand,4.7,20200915
+12,Seller 12 India,Brand,3.97,20181106
+13,Seller 13 India,Reseller,4.79,20180627
+14,Seller 14 India,Reseller,4.03,20171202
+15,Seller 15 India,Distributor,4.48,20200302
+16,Seller 16 India,Brand,3.85,20200916
+17,Seller 17 India,Distributor,4.5,20200911
+18,Seller 18 India,Distributor,3.87,20201003
+19,Seller 19 India,Distributor,4.12,20180122
+20,Seller 20 India,Brand,3.49,20180310
