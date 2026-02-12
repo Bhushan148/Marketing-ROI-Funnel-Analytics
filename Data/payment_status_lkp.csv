@@ -1,6 +1,0 @@
-payment_status_code,payment_status
-SUCCESS,Success
-PENDING,Pending
-FAILED,Failed
-REFUNDED,Refunded
-PARTIAL_REFUND,Partial Refund
