@@ -1,0 +1,22 @@
+# ===== Power BI (PBIP) =====
+# Local data cache & user-specific settings — never share
+**/.pbi/cache.abf
+**/.pbi/localSettings.json
+**/.pbi/*.abf
+
+# Binary report file — the PBIP text files are the source of truth
+*.pbix
+
+# ===== Data & archives (kept local, not part of the shareable report) =====
+/data/
+/Data/
+*.zip
+*.csv
+*.xlsx
+*.xlsm
+
+# ===== OS / editor cruft =====
+.DS_Store
+Thumbs.db
+.vs/
+*.user
