@@ -1,966 +1,1039 @@
-# Marketing ROI & Funnel Analytics
+# Marketing ROI & Funnel Analytics | Power BI
 
-**An end-to-end Power BI delivery, written up the way I run a real consulting engagement: requirements → source analysis → Power Query → data model → DAX → report → Power BI Service (RLS, refresh, deployment) → client sharing and handover.**
+A Power BI marketing analytics project that connects advertising performance, CRM leads, customer information and sales conversions into one reporting model so marketing activity can be followed from spend through to revenue.
 
-> **Business question:** *Is marketing spend producing quality leads, customers, and revenue?*
+The project is built around one business question:
 
-```
-Spend → Impressions → Clicks → Leads → Qualified Leads → Customers → Revenue
-```
+> **Is marketing spend actually producing quality leads, customers and revenue?**
 
----
+Rather than evaluating marketing only through impressions, clicks or lead volume, the report connects those activities with downstream outcomes such as **lead quality, customer acquisition, revenue, ROAS, CAC and marketing contribution**.
 
-## Contents
-1. [Project snapshot](#1-project-snapshot)
-2. [Engagement overview and requirements](#2-engagement-overview-and-requirements)
-3. [Domain knowledge: marketing funnel and metrics](#3-domain-knowledge-marketing-funnel-and-metrics)
-4. [How the project flows, step by step](#4-how-the-project-flows-step-by-step)
-5. [Solution architecture](#5-solution-architecture)
-6. [Repository structure (Azure DevOps)](#6-repository-structure-azure-devops)
-7. [Source data and why it is folder-based](#7-source-data-and-why-it-is-folder-based)
-8. [Power Query: every step and why](#8-power-query-every-step-and-why)
-9. [Data model](#9-data-model)
-10. [DAX measures](#10-dax-measures)
-11. [Report development](#11-report-development)
-12. [Key results and insights from the model](#12-key-results-and-insights-from-the-model)
-13. [Power BI Service: deployment, RLS, refresh, sharing](#13-power-bi-service-deployment-rls-refresh-sharing)
-14. [Testing and validation](#14-testing-and-validation)
-15. [What I did as the Power BI analyst](#15-what-i-did-as-the-power-bi-analyst)
-16. [What I gained from this project](#16-what-i-gained-from-this-project)
-17. [Decisions, issues and lessons learned](#17-decisions-issues-and-lessons-learned)
-18. [Project status](#18-project-status)
+[![Live Report](https://img.shields.io/badge/Live%20Report-Open%20Interactive%20Dashboard-22C55E?logo=powerbi&logoColor=000000)](https://app.fabric.microsoft.com/view?r=eyJrIjoiM2I4NjQ3OGUtOWU3OC00NjQ0LWIzMzYtNTdhMGU0ZmI2NzliIiwidCI6ImQ4ZTFiMDVlLTcwYWEtNGVmNy1iODc4LTQ2NmI2ODhmOTUyZiJ9)
 
-> **How to read the status markers in this document**
-> ✅ = built and visible in this repository (model, Power Query, DAX, report files).
-> 📘 = delivery runbook: the Power BI Service and handover steps I follow on a client engagement, documented here as the plan and configuration for this project. These are not yet configured in a live workspace.
+**Core stack:** Power BI Desktop · Power Query · DAX · Power BI Service · PBIP (TMDL semantic model + PBIR report) · Git · Azure DevOps
 
 ---
 
-## 1. Project snapshot
+## Project Overview
 
-| | |
-|---|---|
-| **Client profile** | B2B SaaS company running paid and organic marketing |
-| **Channels** | Google Ads, Facebook, Instagram, LinkedIn, Email, SEO |
-| **Period covered** | Sep 2023 – Aug 2026 (three fiscal years, FY = Sep–Aug) |
-| **Source systems** | Ad-platform exports, CRM exports, campaign and product masters (CSV and Excel, folder-based) |
-| **Volume** | ~437K source rows: 360,000 ad rows, 48,000 leads, 6,000 orders, plus master data |
-| **Model** | 7 dimensions, 3 facts, 1 helper table, 1 measure table, 16 relationships |
-| **Measures** | 47 DAX measures in 7 display folders |
-| **Report** | 3 main pages, 2 drill-through pages, 1 tooltip page |
-| **Format** | PBIP (TMDL semantic model and PBIR report), version-controlled |
+The reporting period covers **September 2023 to August 2026** and follows a September–August fiscal calendar. The dataset represents a B2B SaaS marketing environment across **Google Ads, Facebook, Instagram, LinkedIn, Email and SEO**.
 
-**Headline result (all three fiscal years):** $97.4M ad spend returned $150.9M net revenue, a ROAS of **1.55x**. 47% of leads qualify, and 4,202 customers were acquired.
+The source layer is intentionally file- and folder-based, using recurring CSV and Excel exports from advertising platforms, CRM, campaign management, customer master data, product data and sales conversions. Power Query is responsible for ingestion, standardisation, merging, attribution, validation and preparation before the data reaches the semantic model.
 
----
+The analytical model uses three fact tables because marketing spend, leads and revenue exist at different business grains. Shared dimensions allow valid cross-fact analysis across common business entities without flattening everything into one table.
 
-## 2. Engagement overview and requirements
+At the current project scale, the solution contains approximately:
 
-This section is how I open any consulting project: agree the problem, the audience and the definition of done before touching data.
+- **437K+ source rows** across all files
+- **360,000 advertising-performance rows**
+- **48,000 CRM leads**
+- **6,000 sales conversions / orders**
+- **7,500 customers**
+- **240 campaigns**
+- **720 ad groups**
+- **24 products**
+- **122 valid geography combinations across 10 countries**
+- **7 dimensions + 3 fact tables**
+- **16 active one-to-many relationships**
+- **47 DAX measures**
+- **3 main report pages + 2 drill-through pages + 1 tooltip page**
 
-### 2.1 Background
-Marketing leadership receives monthly spreadsheets from each ad platform and a separate CRM extract. Nobody can see, in one place, what a dollar of media spend turned into. Channel owners defend their own numbers, and the CMO cannot tell which campaigns to scale or cut.
-
-### 2.2 Objectives
-1. Give leadership one trusted view of spend → leads → customers → revenue.
-2. Rank channels and campaigns by return, not by clicks.
-3. Show where leads are lost between qualification and conversion.
-4. Replace manual spreadsheet consolidation with a refreshable, governed dataset.
-
-### 2.3 Stakeholders
-
-| Stakeholder | Role in the project | What they need |
-|---|---|---|
-| CMO / VP Marketing | Executive sponsor, report consumer | Headline return and trend in ten seconds |
-| Marketing Director | Business owner, sign-off | Channel comparison, budget decisions |
-| Performance and campaign managers | Power users | Campaign ranking and drill-down |
-| Demand generation / Sales | Consumers | Lead quality and conversion leakage |
-| Marketing analysts | Consumers, future maintainers | Detail tables and a clean model |
-| IT / data team | Gateway, workspace and access owners | Secure, supportable refresh |
-
-### 2.4 Business requirements
-
-| ID | Requirement | Priority | Delivered by |
-|---|---|---|---|
-| BR-01 | Total spend, net revenue, ROAS, leads, customers and CAC on one page | Must | Executive Overview |
-| BR-02 | Compare current fiscal year to the prior year | Must | Time-comparison measures, KPI context text |
-| BR-03 | Rank channels by money returned after spend | Must | Channel profit/loss, channel bar |
-| BR-04 | Rank and drill into individual campaigns | Must | Campaign leaderboard, Campaign Detail |
-| BR-05 | Lead funnel with qualification and conversion rates by channel | Must | Funnel page |
-| BR-06 | Revenue by customer segment, country, product and top customers | Should | Funnel & Customers, Customer Detail |
-| BR-07 | Managers see only their own region or channel | Must | Row-level security |
-| BR-08 | Data refreshes automatically every day | Must | Scheduled refresh |
-| BR-09 | Fast refresh as history grows | Should | Incremental refresh |
-| BR-10 | Works on laptop and is accessible (contrast, alt text) | Should | Design system |
-| BR-11 | Metric definitions documented and consistent | Must | Measure table, descriptions, this README |
-
-### 2.5 KPI definitions agreed with the business
-
-| KPI | Definition |
-|---|---|
-| ROAS | Net Revenue ÷ Ad Spend |
-| CAC | Ad Spend ÷ Distinct customers who ordered |
-| CPL | Ad Spend ÷ Leads |
-| Lead Qualification Rate | Qualified Leads ÷ Leads |
-| Qualified → Converted Rate | Converted Leads ÷ Qualified Leads |
-| Marketing Contribution | Net Revenue − Ad Spend |
-| Fiscal year | September to August (FY24, FY25, FY26) |
-
-### 2.6 Scope
-
-| In scope (V1) | Out of scope (V1) |
-|---|---|
-| Ad performance, leads, conversions and revenue | Budget and target tracking |
-| Fiscal-year comparison | Multi-product orders and payment history |
-| Row-level security by region and channel | Real-time / streaming data |
-| Scheduled and incremental refresh | Forecasting and predictive models |
-| Drill-through to campaign and customer | Mobile-specific layout |
-
-**Simplification agreed with the client:** one conversion = one order = one customer + one primary product + one revenue amount.
-
-### 2.7 Assumptions and constraints
-- Source data is delivered as flat-file exports into a shared folder; no direct database access.
-- Spend, leads and revenue sit in three different fact tables, so ratios are only valid by Date, Channel, Campaign and Product (see [section 9](#9-data-model)).
-- SEO has no direct media spend and Email has very little, so ROAS is not meaningful for them; the report uses Marketing Contribution instead.
-- The data used in this portfolio version is synthetic.
-
-### 2.8 Acceptance criteria
-- Model totals reconcile to the validation baseline (see [section 14](#14-testing-and-validation)).
-- Every requirement above is traceable to a visual or a configuration.
-- Managers confirm that RLS shows only their own region or channel data.
-- Refresh succeeds on schedule for two consecutive weeks (hypercare).
+Across the complete reporting period, the model records **$97.4M in marketing spend and $150.9M in net revenue**, resulting in an overall **1.55x ROAS** and approximately **$53.6M in marketing contribution** before other operating costs.
 
 ---
 
-## 3. Domain knowledge: marketing funnel and metrics
+## End-to-End Project Workflow
 
-Marketing analytics only works if the numbers are read the way marketers read them. This is the domain background I worked from, and the reasoning behind how the model and report are built.
+The project was developed from the business requirement through to the published Power BI report, with each stage building on the previous one rather than starting directly with visuals.
 
-### 3.1 The funnel and where each stage lives in the data
+```mermaid
+flowchart TD
+    A[Business Requirements & KPI Definitions] --> B[Source Analysis & Data Profiling]
+    B --> C[Business Grain, Keys & Data Quality Review]
 
-| Funnel stage | Meaning | Where it comes from | Model table |
-|---|---|---|---|
-| **Spend** | Money paid to ad platforms | Ad-platform exports | `Fact_AdPerformance` |
-| **Impressions** | Times an ad was shown | Ad-platform exports | `Fact_AdPerformance` |
-| **Reach** | Unique people who saw it | Ad-platform exports | `Fact_AdPerformance` |
-| **Clicks** | Visits driven by the ad | Ad-platform exports | `Fact_AdPerformance` |
-| **Lead** | A person who left their details (form, contact request) | CRM lead export | `Fact_Lead` |
-| **Qualified lead** | A lead sales judges worth pursuing (often called MQL/SQL) | CRM `QualifiedFlag` | `Fact_Lead` |
-| **Converted lead** | A lead that became an order | CRM `ConvertedFlag` | `Fact_Lead` |
-| **Customer / order** | A paying account and its purchases | Sales conversion export | `Fact_Conversion` |
-| **Revenue** | Money earned (gross, then net of discounts and refunds) | Sales conversion export | `Fact_Conversion` |
+    C --> S1[Advertising Exports<br/>Google · LinkedIn · Email · SEO]
+    C --> S2[Meta Ads Exports<br/>Facebook · Instagram]
+    C --> S3[CRM Data<br/>Leads · Customers · Conversions]
+    C --> S4[Business Masters<br/>Campaign · Ad Group · Product · Geography · Employee]
 
-**The key domain insight:** the top of the funnel (ads) lives in the ad platforms and the bottom (leads, orders) lives in the CRM. They are different systems with different keys. Joining them correctly is what turns "clicks" into "return".
+    S1 --> D[Power Query Ingestion]
+    S2 --> D
+    S3 --> D
+    S4 --> D
 
-### 3.2 Channel types
+    D --> E[00_Parameters<br/>p_SourceRoot · RangeStart · RangeEnd]
+    E --> F[01_Source<br/>Folder.Files · Excel · CSV · Combine Files]
+    F --> G[02_Staging<br/>Types · Cleanup · Standardization · Keys]
+    G --> H[Merge · Append · Enrichment]
+    H --> I[Marketing Attribution<br/>LeadBusinessID → Campaign / Channel / Lead Source]
+    I --> J[03_Validation<br/>Duplicates · Anti Joins · Invalid Metrics · Reconciliation]
 
-| Type | Channels here | How it behaves |
-|---|---|---|
-| **Paid search** | Google Ads | Captures existing demand; high intent, high cost per click |
-| **Paid social** | Facebook, Instagram, LinkedIn | Creates demand; cheap reach on Meta, expensive but precise on LinkedIn (job title, company) |
-| **Owned** | Email | Reaches existing contacts; near-zero media cost; strong for retention, renewal and expansion |
-| **Organic** | SEO | No media spend; the cost sits in content and people, which is outside this dataset |
+    J --> K1[04_Dimensions<br/>Channel · Campaign · Ad Group · Lead Source · Customer · Product]
+    J --> K2[05_Facts<br/>Ad Performance · Lead · Conversion]
+    K1 --> L[Semantic Model]
+    K2 --> L
 
-### 3.3 Metric glossary
+    L --> M1[Dim_Date<br/>Fiscal Calendar Sep–Aug]
+    L --> M2[16 Relationships<br/>1:* · Single Direction · No Fact-to-Fact]
+    L --> M3[Cross-Fact Filter Behaviour<br/>Shared Business Dimensions]
 
-| Metric | Formula | How to read it |
-|---|---|---|
-| **CTR** | Clicks ÷ Impressions | Ad relevance. A low CTR means the ad or audience is wrong. |
-| **CPC** | Spend ÷ Clicks | Price of a visit |
-| **CPM** | Spend ÷ Impressions × 1,000 | Price of attention; compares awareness channels |
-| **CPL** | Spend ÷ Leads | Price of a contact. Cheap leads are worthless if they never qualify. |
-| **Cost per qualified lead** | Spend ÷ Qualified Leads | A fairer CPL; accounts for lead quality |
-| **CAC** | Spend ÷ Customers | Price of a paying customer, the number finance cares about |
-| **ROAS** | Net Revenue ÷ Spend | Revenue returned per $1 of media |
-| **Marketing contribution** | Net Revenue − Spend | Money left after media cost; shows the *size* of a win or loss, which ROAS hides |
-| **Qualification rate** | Qualified ÷ Leads | Lead quality by channel |
-| **Qualified → converted rate** | Converted ÷ Qualified | Sales-handoff effectiveness |
-| **AOV** | Net Revenue ÷ Orders | Typical deal size |
-| **Refund rate** | Refunds ÷ Gross Revenue | Revenue leakage |
+    M1 --> N[DAX & Time Intelligence]
+    M2 --> N
+    M3 --> N
 
-Gross revenue is the list value of orders; net revenue is after discounts and refunds. ROAS is calculated on **net** revenue, because a refunded order did not earn anything.
+    N --> O[47 Measures<br/>Spend · CPL · CAC · Funnel · Revenue · ROAS · YoY]
+    O --> P[Report Development<br/>Executive · Channels & Campaigns · Funnel & Customers]
+    P --> Q[Drill-through · Tooltips · Slicers · Navigation · Interactions · Accessibility]
+    Q --> R[Business Analysis & Insight Validation]
+    R --> T[Performance Optimization<br/>Power Query · Model · DAX · Visuals]
+    T --> U[Query Folding & Refresh Assessment]
 
-### 3.4 Domain rules that shaped the design
+    U --> V[PBIP Project]
+    V --> V1[TMDL<br/>Semantic Model Definition]
+    V --> V2[PBIR<br/>Report Definition]
+    V1 --> W[Git / Azure DevOps]
+    V2 --> W
 
-1. **Attribution is a business decision, not a technical one.** This model uses **last-touch via the lead**: each order is credited to the campaign, channel and lead source of the lead that produced it. First-touch or multi-touch would give different channel rankings, so the rule is stated in the documentation.
-2. **B2B SaaS has a long cycle and repeat revenue.** A lead can convert months later, and much revenue is **renewal and upsell**, not new business. A campaign can therefore "earn" revenue long after its spend, so results are read over fiscal years, not days.
-3. **ROAS is not profit.** It ignores cost of goods, salaries and agency fees. It tells you whether media paid for itself, not whether the company made money. A 1.0x ROAS is break-even on media only.
-4. **Free channels break ratios.** SEO has no media spend (ROAS undefined) and Email costs almost nothing (ROAS in the hundreds). Contribution, not ROAS, is the fair ranking measure.
-5. **Volume is not quality.** A channel with the most leads can still have the weakest qualification, so every lead number is paired with a qualification and conversion rate.
-6. **Platform numbers and CRM numbers rarely agree.** Platforms report their own conversions; finance reports orders. This model uses platform data only for *cost and attention* and the CRM and sales data for *outcomes*.
-7. **Fiscal calendars drive reporting.** The business reports Sep–Aug, so all year-on-year comparisons use fiscal years.
-8. **Metric definitions must be fixed once.** Agreeing that "customer" means a *distinct customer who ordered* (not a lead, not an order) prevents three different CAC numbers in three meetings.
-
----
-
-## 4. How the project flows, step by step
-
-| # | Phase | What happens | Output | Status |
-|---|---|---|---|---|
-| 1 | **Discovery** | Workshops with marketing leadership; agree question, KPIs and scope | Requirements (section 2) | ✅ |
-| 2 | **Source analysis** | Profile every export; map keys, grain, quality issues | Source map and channel story | ✅ |
-| 3 | **Data modelling design** | Choose star schema, fix grain and relationships, freeze V1 | Model design | ✅ |
-| 4 | **Power Query build** | Parameters → source → staging → validation → dimensions and facts | Cleaned, keyed tables | ✅ |
-| 5 | **Semantic model and DAX** | Date table, relationships, 47 measures, hiding and formats | Governed model | ✅ |
-| 6 | **Report design and build** | Wireframe, design system, three pages, drill-through, tooltip | Report (PBIR) | ✅ |
-| 7 | **Testing** | Reconcile totals, test slicers, drill-through, interactions | Test log | ✅ |
-| 8 | **Source control** | Commit to Azure DevOps, feature branches, pull-request review | Versioned project | 📘 |
-| 9 | **Service setup** | Dev / Test / Prod workspaces, gateway, data source credentials | Workspaces | 📘 |
-| 10 | **Security** | RLS roles, test "view as", assign users | Secured dataset | 📘 |
-| 11 | **Refresh** | Incremental policy, scheduled refresh, failure alerts | Automated data | 📘 |
-| 12 | **Release** | Deployment pipeline Dev → Test → Prod | Production report | 📘 |
-| 13 | **Sharing** | Publish a Power BI app to audiences, access via security groups | Live for the client | 📘 |
-| 14 | **Handover and hypercare** | Documentation, training, monitoring, support window | Run state | 📘 |
-
----
-
-## 5. Solution architecture
-
-```
-┌─────────────────────────┐
-│ SOURCE FILES (folder)   │  Ad exports (Google/LinkedIn/Email/SEO, Meta monthly),
-│ CSV + Excel             │  CRM leads/customers, campaign, ad-group, product masters
-└────────────┬────────────┘
-             │  Folder.Files  (path = p_SourceRoot)
-             ▼
-┌─────────────────────────┐
-│ POWER QUERY             │  00_Parameters → 01_Source → 02_Staging → 03_Validation
-│ (shape, clean, key)     │  → 04_Dimensions / 05_Facts
-└────────────┬────────────┘
-             ▼
-┌─────────────────────────┐
-│ SEMANTIC MODEL          │  Star schema, Dim_Date (DAX), 47 measures,
-│ (Import mode)           │  RLS roles, incremental refresh policy
-└────────────┬────────────┘
-             ▼
-┌─────────────────────────┐
-│ POWER BI REPORT         │  Executive · Channels & Campaigns · Funnel & Customers
-│ (PBIR)                  │  + 2 drill-through pages + tooltip
-└────────────┬────────────┘
-             ▼
-┌─────────────────────────┐
-│ POWER BI SERVICE        │  Dev → Test → Prod workspaces, gateway, scheduled refresh,
-│                         │  Power BI app, security groups
-└────────────┬────────────┘
-             ▼
-        CLIENT USERS
+    W --> X[Power BI Service]
+    X --> Y[Refresh · Gateway · Dynamic RLS · Deployment]
+    Y --> Z[Post-Publish Validation<br/>KPIs · Filters · Navigation · Refresh Behaviour]
+    Z --> AA[Final Power BI Report<br/>Marketing Spend → Leads → Customers → Revenue]
 ```
 
+### 1. Requirements and KPI definition
+
+The work started by defining the business question, reporting period and measures needed to evaluate marketing from spend through to revenue. ROAS, CAC, CPL, qualification rate, conversion rate, marketing contribution and Average Order Value were defined before the report layout was built. The September–August fiscal calendar was also fixed at this stage so the model and time-intelligence logic used one reporting definition throughout.
+
+### 2. Source profiling and grain
+
+The advertising exports, CRM leads, customer files, campaign and ad-group masters, product data and sales conversions were reviewed separately to understand their keys, row grain and relationship to the marketing funnel. This led to three fact tables rather than one flattened dataset: ad performance at channel/campaign/ad-group/day grain, leads at one row per lead, and conversions at one row per order.
+
+### 3. Source-folder design and parameters
+
+The input structure was organised into predictable folders for reference data, campaign setup, advertising exports, CRM extracts, product data and conversions. `p_SourceRoot` was created so all source paths are controlled from one parameter. `RangeStart` and `RangeEnd` were added to support date-boundary filtering for incremental refresh.
+
+### 4. File ingestion and Combine Files
+
+`Folder.Files(p_SourceRoot)` is used as the central file index. Excel files are used for reference/master data, while recurring CSV files are combined for advertising, leads and conversions. Folder Combine and Transform Sample File logic allow new files with the expected schema to be picked up during refresh without rebuilding the query.
+
+### 5. Staging and standardisation
+
+The staging layer handles data types, text cleanup, null handling, column standardisation, key preparation and source-specific transformations. Large platform identifiers are kept as text where numeric conversion could lose precision, while analytical relationship keys are aligned to consistent types before loading to the model.
+
+### 6. Merge, append and enrichment
+
+Campaign data is enriched with employee and geography attributes. Customer master, profile, address and geography data are merged into a reporting-ready customer dimension. Core advertising exports and Meta exports are standardised separately and then appended before Channel, Campaign, Ad Group and Product keys are added.
+
+### 7. Marketing attribution
+
+Conversions are linked back to their originating CRM lead through `LeadBusinessID`. Campaign, Channel and Lead Source are then carried from the source lead into the conversion fact. This creates the documented last-touch attribution path used to connect downstream revenue with the marketing activity that generated the lead.
+
+### 8. Data-quality validation
+
+Separate `val_*` queries check duplicates, unmatched keys, invalid advertising metrics, geography problems and source reconciliation. Left Anti joins are used for unmatched-record checks so the failing records can be inspected directly. Validation queries remain Load Off and are expected to return zero invalid rows when the transformation pipeline is clean.
+
+### 9. Final dimensions and facts
+
+Only reporting-ready dimensions and fact tables are loaded into the semantic model. Source, helper, staging and validation queries remain Load Off. The final model contains seven business dimensions and three facts, with `Dim_Date` created inside the semantic model.
+
+### 10. Semantic-model design
+
+The model was built as a star / galaxy schema with **16 active one-to-many, single-direction relationships** and no direct fact-to-fact relationships. Shared dimensions control cross-fact analysis, while technical keys and helper fields that are not useful to report authors are hidden.
+
+### 11. Date model and fiscal calendar
+
+`Dim_Date` covers the full reporting window and includes fiscal year, fiscal quarter, fiscal month and sort columns. It is marked as the model Date table so time intelligence is based on one controlled calendar rather than hidden auto-date tables.
+
+### 12. DAX and reusable business logic
+
+The project contains **47 DAX measures** organised in a dedicated `_Measures` table. Measures cover Spend & Volume, Cost Efficiency, Funnel & Conversion, Revenue & ROI, prior-year comparisons, YoY change and KPI context. `DIVIDE()`, `SAMEPERIODLASTYEAR()`, `HASONEVALUE()`, `SELECTEDVALUE()` and `SWITCH()` are used where they fit the calculation pattern.
+
+### 13. Report design and interaction logic
+
+The report was built after the model and measures were stable. The three main pages cover Executive Overview, Channels & Campaigns, and Funnel & Customers, supported by Campaign Detail, Customer Detail and a report-page tooltip. Synced slicers, drill-through, navigation, conditional formatting and edited interactions are used where the model grain supports them.
+
+### 14. Troubleshooting during development
+
+Issues found during development were fixed at the appropriate layer instead of being hidden in visuals. These included hard-coded path failures, approximately **144,000 Meta rows** losing campaign attribution because long IDs were treated numerically, a conversion-date key type mismatch that affected date filtering, malformed IDs, PBIP/TMDL editing conflicts and a visual type that did not render reliably in the Desktop version used for the project.
+
+### 15. Performance and model optimization
+
+Optimization was handled across Power Query, the semantic model, DAX and the report. Non-model query layers remain Load Off, unnecessary fields are removed or hidden, relationships remain one-to-many and single-direction, calculations are centralized as measures, visual density is controlled, and Performance Analyzer is used to inspect slow visuals or expensive query behavior during tuning.
+
+### 16. Validation and reconciliation
+
+The completed model is reconciled against the project baseline: **360,000 ad rows, 48,000 leads, 22,367 qualified leads, 6,000 orders, 4,202 distinct customers, $97.36M spend and $150.94M net revenue**. Fiscal-year splits, ratios, slicers, drill-through, tooltips, interactions and formatting are also checked before publishing.
+
+### 17. PBIP project structure
+
+The solution is maintained as a **Power BI Project (PBIP)**. The semantic model is stored through **TMDL** definitions and the report through **PBIR** definitions, which makes model and report changes easier to inspect as project files instead of relying only on a single binary PBIX file.
+
+### 18. Git and Azure DevOps
+
+The PBIP project is tracked with Git and stored in Azure DevOps / Azure Repos. This provides version history for model and report changes and makes it possible to compare measures, relationships, metadata and report definitions between revisions. Local cache files and machine-specific settings remain outside source control.
+
+### 19. Power BI Service publishing
+
+After Desktop validation, the report and semantic model are published to Power BI Service. The same core checks are repeated after publishing: KPI values, navigation, slicers, drill-through, tooltips, fiscal-year filtering, connection settings and refresh behavior.
+
+### 20. Dynamic RLS
+
+Dynamic RLS is covered through `USERPRINCIPALNAME()` and a user-access mapping pattern. The main modeling requirement is that the security filter reaches the intended dimensions and facts through the existing relationship structure. Role behavior is checked using **View As / Other user** when authenticated user-level access is required.
+
+### 21. Incremental and scheduled refresh
+
+All three fact pipelines apply `RangeStart` / `RangeEnd` date filters. Because the current source is file-based, the date filters do not fold back to a database engine, so the source type remains an important refresh-performance consideration. Power BI Service refresh setup also includes credentials, gateway requirements for local/network files, refresh history and failure troubleshooting.
+
+### 22. Deployment workflow
+
+The project also covers the use of deployment pipelines when the same Power BI content needs to move through separate workspaces. Before moving a change forward, the semantic model, refresh behavior, KPI baseline, RLS logic, interactions and report responsiveness are checked again. Deployment rules can be used when parameters or connections differ between workspace stages.
+
+### 23. Final report
+
+The final result is a published Power BI report that connects the complete analytical path from **marketing activity → lead generation → lead quality → customer conversion → revenue**, while keeping the development process traceable from source preparation through semantic modeling, report design, validation, source control and Service delivery.
+
 ---
 
-## 6. Repository structure (Azure DevOps)
+## Business Problem
 
-> **This layout and workflow apply to the Azure DevOps team repository only.** It is the working structure used for delivery and is not mirrored in any public GitHub copy of this project.
+Marketing data normally arrives from different systems and each system answers only part of the story. Advertising platforms show spend, impressions and clicks. CRM data shows leads and qualification. Sales systems show customers, orders and revenue.
 
-### 6.1 Folder layout
+The reporting challenge was to connect those layers so the same report could answer questions such as:
 
+- How much did we spend and how much revenue came back?
+- Is marketing return improving over time?
+- Which channels are earning back their spend?
+- Which campaigns should be scaled, reviewed or stopped?
+- Are low-cost leads actually high-quality leads?
+- Where are leads dropping out of the funnel?
+- Which customer segments, geographies and products contribute most revenue?
+- How does CAC vary by channel?
+- How should Email and SEO be evaluated when direct media spend is zero or very low?
+
+The reporting funnel is therefore treated as one connected analytical path:
+
+```text
+Spend → Impressions → Clicks → Leads → Qualified Leads → Converted Leads → Customers / Orders → Net Revenue
 ```
-marketing-roi-funnel-analytics/            (Azure DevOps repo)
+
+The stages are intentionally kept separate in the model because media activity, CRM progression and sales outcomes come from different source systems and operate at different grains.
+
+A few KPI definitions were fixed early so the same business logic is reused across the report:
+
+- **ROAS** = Net Revenue / Marketing Spend
+- **CAC** = Marketing Spend / Distinct Customers
+- **CPL** = Marketing Spend / Leads
+- **Cost per Qualified Lead** = Marketing Spend / Qualified Leads
+- **Lead Qualification Rate** = Qualified Leads / Leads
+- **Qualified → Converted Rate** = Converted Leads / Qualified Leads
+- **Marketing Contribution** = Net Revenue − Marketing Spend
+- **Average Order Value** = Net Revenue / Orders
+
+The project uses **last-touch attribution through the originating lead**. Orders do not directly contain campaign attribution, so each conversion is linked back to its source lead and inherits the corresponding campaign, channel and lead-source keys. This rule is documented because first-touch or multi-touch attribution would produce a different channel view.
+
+---
+
+## Solution Architecture
+
+```mermaid
+flowchart LR
+    A[CSV / Excel source files] --> B[Power Query ingestion and transformation]
+    B --> C[Dimensions and fact tables]
+    C --> D[Power BI semantic model and DAX]
+    D --> E[Power BI report]
+    E --> F[Power BI Service]
+
+    A1[Advertising exports] --> A
+    A2[CRM leads and customers] --> A
+    A3[Campaign / product masters] --> A
+    A4[Sales conversions] --> A
+```
+
+The solution keeps each responsibility in the layer where it belongs. Power Query handles structural preparation and attribution, the semantic model controls relationships and reusable business logic, and the report layer focuses on analysis and interaction. Power BI Service then handles publishing, refresh configuration, security checks and report access.
+
+---
+
+## Source Data
+
+The project uses a structured source-folder contract rather than one pre-built reporting file.
+
+```text
+Marketing_ROI_Source_Data/
 │
-├── README.md                              Project overview and delivery guide (this file)
-├── .gitignore                             Excludes cache.abf, localSettings.json, *.pbix, source data
+├── 01_Marketing_Reference_Data/
+│   ├── Channel_Master.xlsx
+│   ├── Lead_Source_Lookup.xlsx
+│   ├── Geography_Lookup.xlsx
+│   └── Employee_Master.xlsx
 │
-├── powerbi/                               Everything Power BI Desktop opens
+├── 02_Campaign_Management_System/
+│   └── Campaign_Master.xlsx
+│
+├── 03_Advertising_Platform_Setup/
+│   └── Ad_Group_Master.xlsx
+│
+├── 04_Google_LinkedIn_Email_SEO_Exports/
+│   ├── Ad_Performance_2023.csv
+│   ├── Ad_Performance_2024.csv
+│   ├── Ad_Performance_2025.csv
+│   └── Ad_Performance_2026.csv
+│
+├── 05_Meta_Ads_Exports/
+│   ├── Meta_Ads_2023_09.csv
+│   ├── ...
+│   └── Meta_Ads_2026_08.csv
+│
+├── 06_CRM_Customer_Exports/
+│   ├── Customer_Master.xlsx
+│   ├── Customer_Profile.xlsx
+│   └── Customer_Address.xlsx
+│
+├── 07_CRM_Lead_Exports/
+│   ├── Leads_2023.csv
+│   ├── Leads_2024.csv
+│   ├── Leads_2025.csv
+│   └── Leads_2026.csv
+│
+├── 08_Product_Master_Data/
+│   └── Product_Master.xlsx
+│
+└── 09_Sales_Conversion_Exports/
+    ├── Conversions_2023.csv
+    ├── Conversions_2024.csv
+    ├── Conversions_2025.csv
+    └── Conversions_2026.csv
+```
+
+The different file patterns are intentional. Master/reference data is maintained in Excel, while transactional data is delivered as recurring CSV exports. Google, LinkedIn, Email and SEO files are yearly while Meta files are monthly. That makes the project a realistic Power Query ingestion problem rather than a single clean source table.
+
+
+---
+
+## Power Query
+
+Power Query is the main data-preparation layer in this project. The source files arrive in different shapes and frequencies, so the query layer is organised into clear groups rather than building one long transformation chain.
+
+```mermaid
+flowchart LR
+    A[00_Parameters<br/>p_SourceRoot · RangeStart · RangeEnd] --> B[01_Source<br/>Folder index · Excel masters · CSV folders · helper functions]
+    B --> C[02_Staging<br/>Types · cleanup · merges · append · keys · attribution]
+    C --> D[03_Validation<br/>Duplicates · unmatched keys · metric checks · reconciliation]
+    D --> E[04_Dimensions<br/>Load On]
+    D --> F[05_Facts<br/>Load On]
+    E --> G[Semantic Model]
+    F --> G
+```
+
+Only the final dimensions and facts are loaded to the model. Parameters, source, staging, helper and validation queries remain **Load Off**, which keeps the semantic model focused on analytical tables rather than transformation plumbing.
+
+### Power Query transformation structure
+
+```text
+00_Parameters  [Load Off]
+├── p_SourceRoot        → one configurable root path for all source folders
+├── RangeStart          → incremental-refresh lower boundary
+└── RangeEnd            → incremental-refresh upper boundary
+
+01_Source  [Load Off]
+├── srcFile_BusinessFilesIndex = Folder.Files(p_SourceRoot)
+├── Reference / master sources
+│   ├── Channel and lead-source lookups
+│   ├── Geography and employee reference data
+│   ├── src_Campaign
+│   ├── src_AdGroup
+│   ├── Customer master / profile / address
+│   └── Product master
+├── Recurring transaction sources
+│   ├── src_CoreAdFiles       → Google / LinkedIn / Email / SEO yearly CSVs
+│   ├── src_MetaAdFiles       → Facebook / Instagram monthly CSVs
+│   ├── src_LeadFiles         → CRM lead yearly CSVs
+│   └── src_ConversionFiles   → sales-conversion yearly CSVs
+└── Transform-Sample-File / helper functions for folder combine
+
+02_Staging  [Load Off]
+├── stg_Channel / stg_Product / stg_LeadSource
+│   └── trim text · standardise types · create analytical keys
+├── stg_Geography / stg_Employee / stg_AdGroup
+│   └── clean reference attributes · preserve business identifiers
+├── stg_Campaign
+│   └── Campaign + Employee + Geography → owner / team / region enrichment
+├── stg_Customer
+│   └── Customer Master + Profile + Address + Geography → reporting-ready customer
+├── stg_CoreAds / stg_MetaAds
+│   └── standardise source-specific columns and data types
+├── stg_AdPerformance
+│   └── Core Ads + Meta Ads → append → merge Channel / Campaign / AdGroup / Product keys
+├── stg_Lead
+│   └── merge Campaign / Channel / Product / LeadSource / Geography → build LeadCreatedDateKey
+└── stg_Conversion
+    └── Conversion + originating Lead → last-touch Campaign / Channel / LeadSource attribution
+       + build ConversionDateKey
+
+03_Validation  [Load Off]
+├── val_Channel_Duplicates
+├── val_Campaign_Unmatched
+├── val_AdGroup_Unmatched
+├── val_Customer_Unmatched
+├── val_Lead_Unmatched
+├── val_Conversion_Unmatched
+├── val_Ads_InvalidMetrics
+├── val_InvalidGeography
+└── val_Source_Reconciliation
+
+04_Dimensions  [Load On]
+├── Dim_Channel
+├── Dim_Campaign
+├── Dim_AdGroup
+├── Dim_LeadSource
+├── Dim_Customer
+└── Dim_Product
+
+05_Facts  [Load On]
+├── Fact_AdPerformance
+├── Fact_Lead
+└── Fact_Conversion
+
+Dim_Date is created in DAX inside the semantic model, not in Power Query.
+```
+
+### Folder ingestion
+
+A central `Folder.Files(p_SourceRoot)` index is used as the entry point instead of hard-coding full paths in multiple queries. Recurring transactional folders use the folder-combine / Transform Sample File pattern so newly delivered monthly or yearly files can be picked up on refresh as long as they follow the expected schema.
+
+Hidden or temporary files are excluded before expansion, and data types are applied deliberately after the files are combined. This is important because the same field can otherwise be inferred differently across files.
+
+### Standardisation and data preparation
+
+The staging layer performs the repeatable row-level work before the semantic model is built:
+
+- explicit data-type assignment
+- text trimming and cleanup
+- blank / null handling
+- business-key validation
+- surrogate and date-key creation
+- Merge / Expand operations
+- Append operations
+- campaign-owner enrichment
+- customer-profile and geography enrichment
+- product, channel and lead-source mapping
+- defensive ID parsing with `try … otherwise null`
+- `RangeStart` / `RangeEnd` filtering on all three fact pipelines
+
+Large platform identifiers are kept as **text** where numeric conversion could lose precision. Relationship and date keys used by the model are standardised to compatible data types before load.
+
+### Attribution logic
+
+A conversion record does not directly contain every marketing attribute needed for ROI analysis. The conversion pipeline therefore links each order back to its originating CRM lead using `LeadBusinessID` and carries the relevant Campaign, Channel and Lead Source keys into `Fact_Conversion`.
+
+```text
+Sales Conversion + Source Lead → Campaign / Channel / Lead Source attribution → Fact_Conversion
+```
+
+This is the project's documented **last-touch attribution** rule and is what allows revenue to be analysed against the marketing activity that generated the lead.
+
+### Validation before load
+
+Validation is built into the transformation layer rather than being left only to visual inspection. Duplicate checks, Left Anti joins, invalid-metric checks and source reconciliation are kept as separate `val_*` queries. These should return zero invalid rows for a clean refresh.
+
+The most important Power Query outputs can be summarised as:
+
+```text
+Campaign + Employee + Geography              → Dim_Campaign
+Customer + Profile + Address + Geography     → Dim_Customer
+Core Ad Exports + Meta Monthly Exports       → Fact_AdPerformance
+CRM Lead Files + business lookups            → Fact_Lead
+Sales Conversions + lead attribution         → Fact_Conversion
+```
+
+---
+
+## Query Folding and Incremental Refresh
+
+The project uses CSV and Excel files through `Folder.Files`, so this source behaves differently from a SQL database. There is no server-side query engine behind the files for Power Query to push transformations back to.
+
+```text
+CSV / Excel files → Folder.Files → Power Query Mashup Engine → transformations and date filtering → model partitions
+```
+
+That is why **query folding is not available in the same way it would be with SQL Server or another database-backed source**. The transformations execute in the Power Query engine after the files are read.
+
+`RangeStart` and `RangeEnd` are still applied to the fact pipelines using the standard partition boundary pattern:
+
+```text
+Fact_AdPerformance.ReportDate  :  >= RangeStart and < RangeEnd
+Fact_Lead.LeadCreatedDate      :  >= RangeStart and < RangeEnd
+Fact_Conversion.ConversionDate :  >= RangeStart and < RangeEnd
+```
+
+This prepares the model for incremental-refresh partitioning, but it does **not** make the file source fold. Power Query may still need to open the relevant files before rows outside the partition window are removed. In other words, incremental refresh can reduce what is processed into model partitions, but the source-reading cost is not eliminated as efficiently as it would be with a foldable database source.
+
+If the same model is moved to SQL Server, a Fabric Warehouse/Lakehouse SQL endpoint or another foldable source, the semantic-model and report logic can remain largely unchanged while the date filters can be pushed closer to the source for more efficient refresh processing.
+
+---
+
+## Development Issues Resolved
+
+Several issues surfaced during development and became part of the final project design.
+
+### Source-path failures
+
+Early queries depended on local paths, which made refresh fragile when files moved. The source location was moved into `p_SourceRoot`, so individual queries no longer need to be rewritten when the project moves between folders or environments.
+
+### Meta campaign IDs and lost attribution
+
+Approximately **144,000 Meta advertising rows** initially produced null campaign mappings. The external campaign identifier was an 18-digit value and had been interpreted numerically, which caused precision/truncation problems.
+
+The identifier was changed to **text** from ingestion through the merge. This restored the campaign mapping across the Meta dataset and prevented a large block of spend from becoming unattributed.
+
+### Revenue not filtering correctly by date
+
+`Fact_Conversion[ConversionDateKey]` was initially text while `Dim_Date[DateKey]` was numeric. The mismatch prevented the expected date-filter behaviour.
+
+The conversion date key was rebuilt as `Int64.Type` and the model column type was aligned with the date dimension. After the fix, revenue split correctly by fiscal year and the time-intelligence measures behaved as expected.
+
+### Malformed identifiers
+
+Some ID parsing logic was hardened with `try … otherwise null`. A malformed source value can now be isolated through validation instead of failing the complete refresh.
+
+### PBIP / TMDL editing
+
+Direct semantic-model file edits are made only when Power BI Desktop is fully closed. Reopening, refreshing and validating after the edit became part of the project workflow because Desktop can otherwise hold its own in-memory project state while files are being changed externally.
+
+### Visual rendering
+
+A planned plain line-chart implementation did not render reliably in the Desktop version used during development. The final report uses combo/column alternatives where necessary so the analytical message renders reliably in the Power BI Desktop version used for the project rather than following the original wireframe blindly.
+
+---
+
+## Data Model
+
+The semantic model follows a **star / galaxy schema** with three fact tables sharing conformed dimensions.
+
+```text
+                         Dim_Date
+                            │
+            ┌───────────────┼───────────────┐
+            │               │               │
+            ▼               ▼               ▼
+ Fact_AdPerformance     Fact_Lead     Fact_Conversion
+            ▲               ▲               ▲
+            │               │               │
+     Shared business dimensions
+```
+
+### Dimensions
+
+- `Dim_Date`
+- `Dim_Channel`
+- `Dim_Campaign`
+- `Dim_AdGroup`
+- `Dim_LeadSource`
+- `Dim_Customer`
+- `Dim_Product`
+
+### Facts
+
+- `Fact_AdPerformance` — one row per channel × campaign × ad group × day
+- `Fact_Lead` — one row per CRM lead
+- `Fact_Conversion` — one row per order / conversion
+
+### Supporting objects
+
+- `_Measures` — dedicated DAX measure table
+- `Funnel Stage` — disconnected helper table used for the Leads → Qualified → Converted funnel
+
+The model contains **16 active relationships**. All analytical relationships are **Dimension (1) → Fact (*)** and use single-direction filtering. There are no direct fact-to-fact relationships.
+
+This keeps filter propagation predictable and avoids using bi-directional filtering as a shortcut for modelling problems.
+
+---
+
+## Cross-Fact Analysis
+
+The main KPIs do not live in one fact table:
+
+```text
+Spend / Impressions / Clicks → Fact_AdPerformance
+Leads / Qualification        → Fact_Lead
+Customers / Revenue          → Fact_Conversion
+```
+
+As a result, ROAS, CPL, CAC and Marketing Contribution are only valid when the selected dimension can reach the facts required by the calculation.
+
+The shared analytical dimensions used for cross-fact ratios are primarily:
+
+- Date
+- Channel
+- Campaign
+- Product
+
+Other dimensions are intentionally narrower:
+
+- **AdGroup** filters advertising performance only.
+- **LeadSource** applies to lead and conversion analysis but not advertising spend.
+- **Customer** applies to conversion/revenue analysis, not the advertising or lead facts.
+
+This rule is also reflected in visual interactions. Customer-level visuals do not filter the lead funnel because customer attributes do not have a valid relationship path to `Fact_Lead`. Allowing that interaction would make the page look interactive while producing analytically misleading results.
+
+---
+
+## Date Model
+
+`Dim_Date` is created in the semantic model and covers **1,096 dates from 1 September 2023 to 31 August 2026**.
+
+The business reports on a September–August fiscal year, so fiscal attributes are built directly into the date dimension:
+
+```text
+FY24 = Sep 2023 – Aug 2024
+FY25 = Sep 2024 – Aug 2025
+FY26 = Sep 2025 – Aug 2026
+```
+
+The table includes standard calendar fields along with fiscal year, fiscal quarter, fiscal month number and sort columns. It is marked as the model Date table so time-intelligence logic is based on one controlled calendar rather than hidden auto-date tables.
+
+The fiscal calendar matters because calendar-year 2023 and 2026 are partial periods in the dataset. Comparing full fiscal years gives a more meaningful business trend.
+
+---
+
+## DAX & KPI Design
+
+The semantic model contains **47 reusable DAX measures** in `_Measures`, organised into business-focused display folders.
+
+### Spend and volume
+
+- Total Spend
+- Total Impressions
+- Total Clicks
+- Total Reach
+
+### Cost efficiency
+
+- CTR %
+- CPC
+- CPM
+- CPL
+- CAC
+- Cost per Qualified Lead
+
+### Funnel and conversion
+
+- Total Leads
+- Qualified Leads
+- Converted Leads
+- Total Customers
+- Lead Qualification Rate
+- Qualified → Converted Rate
+- Lead → Customer Rate
+- Click → Lead Rate
+- Funnel Value
+- Funnel % of Leads
+
+### Revenue and return
+
+- Total Orders
+- Gross Revenue
+- Net Revenue
+- Total Refunds
+- ROAS
+- Average Order Value
+- Average Revenue per Customer
+- Marketing Contribution
+
+### Time comparison
+
+- prior-year Spend
+- prior-year Revenue
+- prior-year Leads
+- prior-year Customers
+- prior-year ROAS
+- prior-year CAC
+- YoY percentage measures
+- ROAS YoY change
+
+### KPI context
+
+KPI cards dynamically show context such as:
+
+```text
+▲ 4.2% vs prior FY
+▼ 3.1% vs prior FY
+No prior year
+All fiscal years
+```
+
+The measure layer uses patterns such as `DIVIDE()`, `SAMEPERIODLASTYEAR()`, `HASONEVALUE()`, `SELECTEDVALUE()` and `SWITCH()` so ratio handling, fiscal comparisons and disconnected helper logic remain reusable across visuals.
+
+---
+
+## Report Design
+
+The report is designed for two levels of use: leadership should be able to understand the headline position quickly, while analysts and campaign managers can drill into the drivers behind it.
+
+The visual design uses a simple **Corporate Cool** system:
+
+- cool-grey report surface
+- white cards
+- slate typography
+- cyan for revenue / return measures
+- slate for spend / cost measures
+- fixed channel colours
+- consistent spacing and navigation
+- accessible contrast
+- alt text and readable labels
+
+A consistent visual rule is used throughout the report:
+
+> **Cyan = money back. Slate = money out.**
+
+This makes the relationship between spend and return easier to read across KPI cards, charts and tables.
+
+---
+
+## Report Pages
+
+### Executive Overview
+
+The landing page answers the main business question first: what was spent, what came back and whether performance is improving.
+
+It includes:
+
+- Total Spend
+- Net Revenue
+- ROAS
+- Leads
+- Customers
+- CAC
+- prior-fiscal-year KPI context
+- monthly Spend vs Net Revenue
+- channel-level Spend vs Net Revenue
+- Fiscal Year and Channel slicers
+
+### Channels & Campaigns
+
+This page moves from overall performance into allocation and campaign-level efficiency.
+
+It includes:
+
+- Marketing Contribution by Channel
+- campaign Spend vs Revenue analysis
+- monthly channel trends
+- ad-format CTR / CPC analysis
+- campaign leaderboard
+- CPL, CAC, Customers, Revenue and ROAS
+- drill-through into individual campaigns
+
+### Funnel & Customers
+
+This page focuses on what happens after marketing generates demand.
+
+It includes:
+
+- Leads → Qualified → Converted funnel
+- qualification vs conversion by channel
+- customer-segment revenue
+- country-level revenue
+- product-category performance
+- top-customer analysis
+- customer drill-through
+
+### Campaign Detail
+
+A hidden drill-through page provides one-campaign context including campaign profile, Spend, Revenue, ROAS, Leads, CPL, CAC, monthly trend, campaign funnel and ad-group performance.
+
+### Customer Detail
+
+A second hidden drill-through page provides customer profile, Orders, Revenue, AOV, Refunds, monthly revenue and order history.
+
+### Channel Tooltip
+
+A report-page tooltip provides channel-level Spend, Revenue, ROAS, CAC and trend context without forcing users away from the main page.
+
+---
+
+## Key Results
+
+Across the full reporting period:
+
+- **Total Spend:** $97.36M
+- **Net Revenue:** $150.94M
+- **Gross Revenue:** $154.89M
+- **ROAS:** 1.55x
+- **Marketing Contribution:** +$53.58M
+- **Leads:** 48,000
+- **Qualified Leads:** 22,367 / 46.6%
+- **Converted Leads / Orders:** 6,000 (12.5% of leads)
+- **Distinct Customers:** 4,202 (8.8% of leads)
+
+The overall 1.55x ROAS hides very different channel economics. Email, LinkedIn and SEO together contribute approximately **+$86.1M**, while Google Ads, Instagram and Facebook together contribute approximately **−$32.5M** after media spend.
+
+Google Ads accounts for roughly **51% of total spend** in the project dataset but returns around **0.73x ROAS**, making campaign-level optimisation inside Google one of the clearest areas for investigation.
+
+LinkedIn tells a different story. Its lead costs are relatively high, but the enterprise-heavy customer mix produces much higher revenue per customer and an overall ROAS of approximately **3.22x**. This is one reason the report does not use CPL alone to judge channel quality.
+
+Facebook generates a large volume of leads at a relatively low paid CPL, but qualification is weaker. Instagram shows an even weaker bottom-funnel pattern. The report therefore keeps qualification and conversion rates next to lead counts rather than treating raw lead volume as success.
+
+From FY25 to FY26, the project dataset shows approximately **7% growth in customers** alongside an **8% reduction in CAC**, while spend decreased slightly.
+
+At campaign level, **127 of the 199 campaigns with media spend (about 64%)** returned less than $1 for each $1 spent. This illustrates why a positive overall ROAS still requires campaign-level investigation.
+
+---
+
+## Data Validation
+
+The model is reconciled against a known validation baseline after refresh. Core checks include:
+
+- **360,000** advertising rows
+- **$97,364,735** Total Spend
+- **2,726,971,427** Impressions
+- **65,296,970** Clicks
+- **48,000** Leads
+- **22,367** Qualified Leads
+- **6,000** Orders
+- **4,202** Distinct Customers
+- **$154,885,248** Gross Revenue
+- **$150,944,966** Net Revenue
+- **1,096** Date rows
+
+Validation also covers:
+
+- duplicate and unmatched keys
+- relationship behaviour
+- fiscal-year splits
+- manual ratio spot checks
+- slicer behaviour
+- drill-through context
+- tooltip context
+- edited visual interactions
+- sort order and formatting
+
+One business-definition question remains visible in the documentation: `ConversionStatus` contains Completed, Refunded, Pending and Cancelled orders. The current baseline includes all rows. If the business definition changes to recognised revenue from Completed orders only, the revenue measures should be changed explicitly rather than silently changing the validation baseline.
+
+---
+
+## Performance & Optimization
+
+Performance work is considered across Power Query, the semantic model, DAX and the report rather than being treated as one final tuning step.
+
+### Power Query
+
+- source, staging and validation queries remain **Load Off**
+- one reusable root-folder index is used for source discovery
+- relationship keys are cleaned before merges
+- 18-digit external identifiers remain text where numeric precision is unsafe
+- integer surrogate/date keys are used for model relationships
+- transformations are layered to make refresh issues easier to isolate
+- `RangeStart` / `RangeEnd` filters exist on all three fact tables
+
+### Semantic model
+
+- clean fact/dimension separation
+- one-to-many relationships
+- single-direction filter flow
+- no direct fact-to-fact relationships
+- no unnecessary many-to-many relationships
+- no unnecessary bi-directional filters
+- technical fields hidden from report authors
+- reusable calculations centralised in `_Measures`
+
+### DAX
+
+- reusable measures instead of visual-specific duplicate calculations
+- `DIVIDE()` for safe ratios
+- context checks for YoY logic
+- dedicated date dimension for time intelligence
+- disconnected helper table for funnel presentation instead of an unnecessary relationship
+
+### Report layer
+
+- controlled visual density
+- drill-through instead of overcrowding the main analytical pages
+- report-page tooltips for secondary context
+- edited interactions where the model grain does not support cross-filtering
+- Performance Analyzer used as the main approach for identifying slow visuals or expensive measure execution during tuning
+
+The measurable engineering improvements in the project include restoring campaign attribution across **144,000 Meta rows**, centralising **47 reusable measures**, governing **16 relationships**, reconciling **360K ad rows + 48K leads + 6K orders**, and keeping source, staging and validation queries outside the loaded semantic model.
+
+---
+
+## Power BI Project Format
+
+The solution is maintained as a **Power BI Project (PBIP)** rather than relying only on a binary `.pbix` file.
+
+```text
+Marketing ROI & Funnel Analytics.pbip
+│
+├── Marketing ROI & Funnel Analytics.Report/
+│   └── PBIR report definitions
+│
+└── Marketing ROI & Funnel Analytics.SemanticModel/
+    └── TMDL semantic-model definitions
+```
+
+### PBIP
+
+PBIP provides a project-based structure where the report and semantic model remain separate but connected. This makes the project easier to manage in Git and avoids the traditional pattern of manually renamed PBIX versions.
+
+### TMDL
+
+TMDL stores semantic-model definitions such as tables, columns, measures, relationships, formats, descriptions, metadata and Power Query expressions in text-based files that can be reviewed and compared in source control.
+
+### PBIR
+
+PBIR stores report definitions in a source-control-friendly structure so report-page and visual changes can be versioned rather than existing only inside a PBIX binary.
+
+---
+
+## Source Control & Azure DevOps
+
+The project is maintained in **PBIP** format so the semantic model and report definitions can be stored as text-based project files rather than keeping the complete development history inside one binary PBIX file.
+
+```text
+Power BI Desktop → PBIP / TMDL / PBIR → Git → Azure DevOps Repos → change history / review / rollback
+```
+
+Git is used to track changes across the Power BI project, while Azure DevOps provides the remote repository for keeping the project history in one place. This is especially useful with TMDL and PBIR because changes to measures, relationships, model metadata and report definitions can be compared at file level.
+
+The source-control setup focuses on normal Power BI development tasks:
+
+- saving the report as a Power BI Project rather than only as PBIX;
+- keeping the `.Report` and `.SemanticModel` folders together with the `.pbip` file;
+- tracking DAX, relationships, formatting and report-definition changes through Git;
+- reviewing file differences before replacing a working model or report version;
+- keeping source data, local cache files and machine-specific settings outside Git through `.gitignore`;
+- using commit history to understand what changed and to return to an earlier working state when required.
+
+PBIP also changes how I work with the model locally. When TMDL or Power Query expressions are edited outside Desktop, Power BI Desktop is closed first, then the project is reopened, refreshed and validated. This avoids conflicting in-memory and file-based model states.
+
+The main value of source control in this project is simple: report development becomes traceable. Instead of files such as `Final.pbix`, `Final_v2.pbix` and `Final_latest.pbix`, changes to the model and report can be followed through the project history.
+
+---
+
+## Power BI Service, Security & Publishing
+
+After the report was completed and validated in Power BI Desktop, the report and semantic model were published to **Power BI Service**. After publishing, the main report behaviour was checked again, including navigation, slicers, drill-through, tooltips, fiscal-year filtering, headline KPI values, connection settings and refresh behaviour.
+
+### Dynamic Row-Level Security
+
+Dynamic RLS is covered as part of the semantic-model security design. The pattern uses `USERPRINCIPALNAME()` together with a user-access mapping structure so one report can return different data scopes based on the signed-in user instead of creating separate copies of the report.
+
+The important part from a modelling perspective is where the security filter is applied and whether that filter reaches the required fact tables correctly. The same relationship and filter-propagation rules used for normal analysis also matter for RLS. Role behaviour is checked with **View As / Other user** so allowed and restricted scopes can be tested before the report is shared with authenticated users.
+
+Dynamic RLS is relevant when the report is shared through authenticated user access. The security design is kept separate from the general share link so the same semantic-model pattern can be used when user-specific access is required.
+
+### Incremental refresh
+
+`RangeStart` and `RangeEnd` are included in Power Query, and all three fact pipelines apply the standard date-boundary pattern. This keeps the fact queries ready for incremental-refresh configuration:
+
+```text
+Fact_AdPerformance.ReportDate  : >= RangeStart and < RangeEnd
+Fact_Lead.LeadCreatedDate      : >= RangeStart and < RangeEnd
+Fact_Conversion.ConversionDate : >= RangeStart and < RangeEnd
+```
+
+The project also exposed an important limitation: the source is based on CSV and Excel files through `Folder.Files`, so these date filters do not fold back to a database engine. The files still need to be read before Power Query can remove rows outside the required range. This is why query folding and source type must be considered together with incremental refresh rather than treating the two parameters alone as a performance solution.
+
+### Scheduled refresh and gateway
+
+The Service-side refresh workflow covers the normal items required to keep a published Power BI model current: source credentials, gateway availability for local/on-premises files, refresh schedule, refresh history and failure investigation.
+
+For this source pattern, a gateway is required when the Service must reach files that remain on a local or network location. Common refresh checks include:
+
+- gateway online/offline status;
+- source credentials;
+- changes to file names or folder paths;
+- a new file arriving with a different schema;
+- unexpected data-type changes;
+- `p_SourceRoot` pointing to the wrong location;
+- failures introduced by a transformation or merge.
+
+The same validation baseline used during Desktop development is useful after refresh because a technically successful refresh can still load incorrect business results.
+
+### Deployment pipeline
+
+The project also covers how the same Power BI item can be moved through separate workspaces by using a deployment pipeline. The purpose is to validate report/model changes before updating the version used by report consumers, while deployment rules can handle environment-specific parameters or connections where required.
+
+The checks before moving a change forward are the same checks used throughout this project:
+
+- the semantic model opens and refreshes correctly;
+- baseline KPIs reconcile;
+- relationships and filter propagation behave correctly;
+- RLS logic is checked where authenticated access is used;
+- slicers, drill-through, tooltips and navigation still work;
+- no model change has introduced unnecessary columns, relationships or calculations;
+- report pages remain responsive after the change.
+
+### Report publishing
+
+The completed report is published through Power BI Service and linked directly from the repository. After publishing, the report is checked again for KPI consistency, filters, drill-through, tooltips, navigation and refresh behaviour.
+
+The Service work is part of the same project lifecycle: build and validate locally, publish the semantic model and report, confirm behaviour after publishing, manage refresh requirements, and keep security and deployment considerations aligned with the model design.
+
+---
+
+## Repository Structure
+
+```text
+Marketing-ROI-Funnel-Analytics/
+│
+├── README.md
+├── .gitignore
+│
+├── powerbi/
 │   ├── Marketing ROI & Funnel Analytics.pbip
-│   ├── Marketing ROI & Funnel Analytics.Report/            PBIR report (pages, visuals, themes)
-│   └── Marketing ROI & Funnel Analytics.SemanticModel/     TMDL model (tables, measures, relationships, Power Query)
-│
-├── data/
-│   └── README.md                          Source folder contract: expected subfolders and file names
-│                                          (actual data is never committed)
+│   ├── Marketing ROI & Funnel Analytics.Report/
+│   └── Marketing ROI & Funnel Analytics.SemanticModel/
 │
 ├── docs/
-│   ├── requirements.md                    Business requirements and KPI definitions
-│   ├── report-spec.md                     Approved report design spec
-│   ├── data-model.md                      Schema, relationships, measure catalog
-│   ├── project-guide.md                   Design decisions and build notes
-│   └── images/                            Screenshots and model diagram
+│   ├── requirements.md
+│   ├── report-spec.md
+│   ├── data-model.md
+│   ├── project-guide.md
+│   └── images/
+│
+├── data/
+│   └── README.md
 │
 ├── tools/
-│   └── build_report.js                    Report-page generator (Node.js)
+│   └── build_report.js
 │
 └── .azuredevops/
-    └── pull_request_template.md           PR checklist
+    └── pull_request_template.md
 ```
 
-### 6.2 Why it is organised this way
-
-| Folder | Reason |
-|---|---|
-| `powerbi/` | Keeps the `.pbip`, `.Report` and `.SemanticModel` together so their relative links never break; this is also the folder the Fabric Git integration points at |
-| `data/` | The report depends on a source-folder contract, so the contract is documented even though the files are not stored in Git |
-| `docs/` | Requirements, design and decisions live beside the code, so a new analyst can onboard without chasing emails |
-| `tools/` | Anything that generates or checks project files stays out of the Power BI folders |
-
-### 6.3 Branching and review
-
-| Branch | Purpose |
-|---|---|
-| `main` | Production-ready; what Prod is released from |
-| `develop` | Integration branch; feeds the Dev and Test workspaces |
-| `feature/<ticket>-<short-name>` | One change per branch (e.g. `feature/142-roas-yoy-measure`) |
-| `hotfix/<ticket>-<short-name>` | Urgent production fix, merged to `main` and back to `develop` |
-
-- Work items (User Story → Task → Bug) in **Azure Boards**; every commit references the work item (`#142`).
-- Commit style: `[142] Add ROAS YoY change measure`.
-- **Pull-request policy on `develop` and `main`:** one reviewer minimum, linked work item, and the PR checklist completed (totals reconcile, no hand-edited `visual.json` without the generator, no data files, model opens cleanly).
-- Why TMDL and PBIR: they are text, so diffs show exactly which measure or visual changed, and merges are reviewable.
-
-### 6.4 Working rules for the team
-1. Close Power BI Desktop fully before hand-editing TMDL or moving files.
-2. Edit Power Query through `expressions.tmdl` so query groups are preserved.
-3. Keep file encoding **UTF-8 without BOM, CRLF, TAB**.
-4. Structural report changes go through the spec and generator, not individual visual files.
-5. Never commit `cache.abf`, `localSettings.json`, `.pbix` files or source data.
+The `data/README.md` documents the source-folder contract used by `p_SourceRoot`, while the Power BI project files, supporting documentation and build utilities remain organised separately in the repository.
 
 ---
 
-## 7. Source data and why it is folder-based
+## Technology Stack
 
-### 7.1 Decision
-The project started with SQL plus files. I moved it to a **file and folder-driven** design for two reasons:
-
-1. **Realism.** In many small and mid-sized marketing teams the real inputs are platform exports, CRM extracts and master Excel files dropped in a shared folder.
-2. **Power Query does the visible work.** Folder combine, merges, append, standardisation and attribution are all done in the query layer, where the logic is transparent and reviewable.
-
-### 7.2 Source folder contract
-
-```
-<p_SourceRoot>/
-├── 01_Marketing_Reference_Data/            Channel_Master, Lead_Source_Lookup, Geography_Lookup, Employee_Master (.xlsx)
-├── 02_Campaign_Management_System/          Campaign_Master.xlsx
-├── 03_Advertising_Platform_Setup/          Ad_Group_Master.xlsx
-├── 04_Google_LinkedIn_Email_SEO_Exports/   Ad_Performance_2023 … 2026 (.csv, yearly)
-├── 05_Meta_Ads_Exports/                    Meta_Ads_2023_09 … 2026_08 (.csv, monthly)
-├── 06_CRM_Customer_Exports/                Customer_Master, Customer_Profile, Customer_Address (.xlsx)
-├── 07_CRM_Lead_Exports/                    Leads_2023 … 2026 (.csv, yearly)
-├── 08_Product_Master_Data/                 Product_Master.xlsx
-└── 09_Sales_Conversion_Exports/            Conversions_2023 … 2026 (.csv, yearly)
-```
-
-Numbered folders mirror the business systems each file comes from: reference data, campaign management, ad platform setup, platform exports, CRM, product catalogue and sales.
-
-### 7.3 Why the numbering, and why different export shapes
-- **Numbering** gives a stable order and makes it obvious where a new file belongs.
-- **Yearly vs monthly files** is deliberate: Google, LinkedIn, Email and SEO exports are yearly, Meta exports are monthly. This reproduces the real situation where each platform delivers differently, and it is the reason a *folder combine* is needed.
-- **Masters as Excel, transactions as CSV** matches how business teams maintain reference data (Excel) versus how systems export bulk data (CSV).
-
-### 7.4 Volumes
-
-| Entity | Rows |
-|---|---|
-| Channels | 6 |
-| Campaigns | 240 |
-| Ad groups | 720 |
-| Lead sources | 7 |
-| Customers | 7,500 |
-| Products | 24 |
-| Geography | 122 locations across 10 countries |
-| Ad performance | 360,000 (216,000 core + 144,000 Meta) |
-| Leads | 48,000 |
-| Orders | 6,000 |
-
-### 7.5 Channel behaviour in the data
-
-| Channel | Behaviour | Approx. lead qualification |
-|---|---|---|
-| Google Ads | Strong intent, higher CPC, healthy conversion | 52% |
-| Facebook | High reach and lead volume, lower quality | 35% |
-| Instagram | Awareness-heavy, weak bottom-funnel conversion | 30% |
-| LinkedIn | Low volume, high CPL/CAC, high revenue per customer | 62% |
-| Email | Very low media cost, retention and expansion | 58% |
-| SEO | Zero direct spend, organic, efficient | 48% |
-
-> The data is **synthetic**, generated for portfolio use. Source files are excluded from Git (`.gitignore`); `data/README.md` documents the folder contract so anyone can recreate the structure.
+- **Microsoft Power BI Desktop** — semantic-model and report development
+- **Power BI Service** — report publishing, refresh configuration and Service-side validation
+- **Power Query / M** — folder ingestion, Combine Files, staging, merges, append, data cleaning, keys, attribution and validation
+- **DAX** — KPI measures, ratios, funnel calculations, fiscal time intelligence and KPI context
+- **Power BI Semantic Model** — relationships, filter behaviour, measure organisation and model metadata
+- **Import mode** — in-memory analytical model over the prepared fact and dimension tables
+- **CSV / Excel + Folder connector** — recurring advertising, CRM, master-data and conversion source files
+- **Dynamic RLS design** — `USERPRINCIPALNAME()` and user-access mapping pattern
+- **Incremental Refresh design** — `RangeStart` / `RangeEnd` filters on all fact pipelines
+- **Scheduled Refresh / Gateway workflow** — Service refresh setup and troubleshooting for file-based sources
+- **Deployment Pipelines** — moving validated Power BI changes between separate workspaces when required
+- **Performance Analyzer** — visual and DAX query investigation during report tuning
+- **PBIP (TMDL semantic model + PBIR report)** — project-based Power BI structure used for versionable model and report definitions
+- **Git** — local version history and comparison of project changes
+- **Azure DevOps / Azure Repos** — remote source control for the Power BI project
+- **Node.js** — supporting report-generation utility stored in `tools/build_report.js`
 
 ---
 
-## 8. Power Query: every step and why
+## Project Summary
 
-### 8.1 Design principles
-- **One parameter controls the data location.** `p_SourceRoot` is the only place the path lives, so moving the data from a laptop to SharePoint or a network share is a one-value change.
-- **Layered queries.** Each layer has one job, so a problem can be located quickly.
-- **Reference, never duplicate.** Staging and model queries reference upstream queries so a fix flows through automatically.
-- **Only final tables load.** Source, staging and validation queries have *Enable load* switched off, which keeps the model small.
-- **Fix data in Power Query, not in DAX.** Types, keys, merges and cleanup belong upstream.
+This project brings together the full analytical path from **marketing spend to revenue** in one Power BI solution.
 
-### 8.2 Query layers
+The work covers source profiling, folder-based Power Query ingestion, cleaning and standardisation, last-touch attribution, dimensional modelling, multi-fact filter behaviour, fiscal time intelligence, reusable DAX measures, report design, validation, performance considerations, incremental-refresh design, PBIP/TMDL/PBIR project structure, Git/Azure DevOps source control and the Power BI Service workflow for publishing, refresh, security and deployment.
 
-| Group | Prefix | Load | Job |
-|---|---|---|---|
-| `00_Parameters` | `p_SourceRoot`, `RangeStart`, `RangeEnd` | Off | Configuration |
-| `01_Source` | `src_*`, `srcFile_BusinessFilesIndex`, `hlp_*` helpers | Off | Read raw files, nothing else |
-| `02_Staging` | `stg_*` | Off | Clean, type, enrich, create keys |
-| `03_Validation` | `val_*` | Off | Return rows that break data-quality rules (should be empty) |
-| `04_Dimensions` | `Dim_*` | On | Final dimension tables |
-| `05_Facts` | `Fact_*` | On | Final fact tables |
+The final report gives marketing leadership a consolidated view of spend, lead quality, customer acquisition and revenue, while providing campaign managers and analysts enough detail to investigate the drivers behind the headline result.
 
-Flow: `src_` → `stg_` → `Dim_` / `Fact_`.
+The project also captures the practical issues that usually sit between the data source and the final dashboard: type mismatches, large external identifiers, broken attribution, date-filter behaviour, refresh limitations, cross-fact context, visual interactions and Service-side checks.
 
-### 8.3 Step by step
-
-**Step 1: Parameters**
-- Create `p_SourceRoot` (text): the root of the data folder.
-- Create `RangeStart` and `RangeEnd` (date/time): required for incremental refresh. Values are 2023-09-01 and 2026-09-01.
-
-**Step 2: One file index**
-`srcFile_BusinessFilesIndex` runs `Folder.Files(p_SourceRoot)` once. Every master-file query filters this index by `Folder Path` and `Name` instead of hard-coding a full path. *Why:* one folder scan, one place to fix if a folder moves, and every path is built from the parameter.
-
-**Step 3: Master data (Excel)**
-For `Channel_Master`, `Lead_Source_Lookup`, `Geography_Lookup`, `Employee_Master`, `Campaign_Master`, `Ad_Group_Master`, `Customer_*` and `Product_Master`:
-1. Filter the index to the folder and file name.
-2. Take the file's `Content` and open it with `Excel.Workbook`.
-3. Expand the data, **promote headers**.
-4. **Set data types** explicitly (text, whole number, date, logical).
-5. **Remove helper columns** left by the import.
-6. **Trim text** in key and descriptive columns.
-
-*Why:* the explicit types and trimmed keys prevent silent merge failures later (a trailing space is enough to break a join).
-
-**Step 4: Transaction files (CSV), folder combine**
-For `src_CoreAdFiles`, `src_MetaAdFiles`, `src_LeadFiles`, `src_ConversionFiles`:
-1. Filter the index to the single folder for that source.
-2. **Exclude hidden files** (`Attributes[Hidden] <> true`) so temp files never enter the load.
-3. Apply a **Transform Sample File** function to each file's content.
-4. Expand the combined result and **set data types**.
-
-*Why folder combine:* new yearly or monthly files dropped into the folder are picked up on the next refresh with no query change. This is the main reason the project is folder-based.
-
-**Step 5: Staging (`stg_*`)**
-- `stg_Channel`, `stg_Product`, `stg_LeadSource`, `stg_Geography`, `stg_Employee`, `stg_AdGroup`: cleaned masters with surrogate keys.
-- `stg_Campaign`: **merge** campaign with employee (owner, department, team, manager) and with geography (region, country, market tier, language), then rename the expanded columns.
-- `stg_Customer`: **merge** customer master with profile (segment, industry, size, tier) and address, then with geography (country, state, city).
-- `stg_CoreAds` and `stg_MetaAds`: standardised ad exports.
-- `stg_AdPerformance`: **append** core and Meta exports, then merge keys.
-- `stg_Lead`: merge campaign, channel, product, lead source and geography keys; build `LeadCreatedDateKey`.
-- `stg_Conversion`: merge each order back to its originating lead.
-
-*Why merges here:* the dimensions end up wide and self-contained (a campaign carries its owner and region), so report users never need to chase lookups.
-
-**Step 6: Key creation**
-- Dimension surrogate keys (`ChannelKey`, `CampaignKey`, `AdGroupKey`, `ProductKey`, `LeadSourceKey`, `CustomerKey`).
-- **Date keys** as integers in `yyyyMMdd` form (`ReportDateKey`, `LeadCreatedDateKey`, `ConversionDateKey`) to match `Dim_Date[DateKey]`.
-- `LeadKey` and `ConversionKey` parsed from the ID text using `try … otherwise null`, so a malformed ID produces a null instead of failing the whole refresh.
-
-*Why integer keys:* they are smaller and faster than text, and they join cleanly to the date dimension.
-
-**Step 7: Last-touch attribution (conversion)**
-Orders do not carry campaign, channel or lead source directly. `stg_Conversion` merges each order to its source lead (`LeadBusinessID`) and brings back the lead's campaign, channel and lead-source keys. *Why:* this is what lets revenue be sliced by channel and campaign, which is the core of the ROI story.
-
-**Step 8: Fact queries**
-- `Fact_AdPerformance`: ad rows with channel, campaign, ad group, product and date keys.
-- `Fact_Lead`: lead rows with all dimension keys and flags (`QualifiedFlag`, `ConvertedFlag`).
-- `Fact_Conversion`: orders with attributed keys and revenue columns.
-- Each fact **filters its date column between `RangeStart` and `RangeEnd`** (`ReportDate`, `LeadCreatedDate`, `ConversionDate`), which prepares it for incremental refresh.
-
-**Step 9: Validation queries**
-
-| Query | Rule | Expected |
-|---|---|---|
-| `val_Channel_Duplicates` | Group by channel key, flag any count above 1 | 0 rows |
-| `val_Ads_InvalidMetrics` | Negative metrics, reach > impressions, clicks > impressions, unique clicks > clicks, landing-page views > clicks, SEO with paid spend | 0 rows |
-| `val_Conversion_Unmatched` | **Left Anti join** of orders to leads: orders with no matching lead | 0 rows |
-
-*Why Left Anti joins:* they return exactly the rows that failed to match, which is the fastest way to find broken keys.
-
-**Step 10: Dimensions**
-`Dim_*` queries are thin passthroughs of their staging queries, so all logic stays in one place. `Dim_Date` is **not** in Power Query; it is built in DAX (see [section 9](#9-data-model)).
-
-### 8.4 Problems solved in Power Query
-
-| Problem | Cause | Fix |
-|---|---|---|
-| Refresh failed: "key didn't match any rows" | Hard-coded source paths | All paths built from `p_SourceRoot` |
-| 144K rows with null `CampaignKey` on Meta data | 18-digit campaign IDs read as Int64 and truncated | `ExternalCampaignID` typed as **text** |
-| Revenue did not filter by date | `ConversionDateKey` was text; `Dim_Date[DateKey]` is a number | Key created as `Int64.Type` |
-| Validation query was a passthrough | Placeholder logic | Replaced by a real Left Anti join |
-| Fragile ID parsing | Bad IDs failed the refresh | Wrapped in `try … otherwise null` |
-| Dead code | Orphaned `src_ChannelMaster` | Removed |
-
----
-
-## 9. Data model
-
-A **star (galaxy) schema**: seven dimensions shared by three fact tables. All relationships are **Dimension (1) → Fact (\*)**, single-direction, with **no fact-to-fact relationships**.
-
-```
-                         ┌───────────┐
-                         │  Dim_Date │
-                         └─────┬─────┘
-            ┌──────────────────┼──────────────────┐
-   ┌────────▼─────────┐  ┌─────▼──────┐   ┌───────▼─────────┐
-   │ Fact_AdPerformance│  │ Fact_Lead  │   │ Fact_Conversion │
-   └────────┬─────────┘  └─────┬──────┘   └───────┬─────────┘
-            │                  │                   │
-   Dim_Channel · Dim_Campaign · Dim_AdGroup · Dim_LeadSource
-                    Dim_Customer · Dim_Product
-```
-
-| Table | Type | Grain / role |
-|---|---|---|
-| `Dim_Date` | DAX dimension | 1 row per day, 2023-09-01 to 2026-08-31 (1,096 rows), marked as date table, fiscal calendar and hierarchy |
-| `Dim_Channel` | Dimension | 6 channels |
-| `Dim_Campaign` | Dimension | 240 campaigns, with owner and geography |
-| `Dim_AdGroup` | Dimension | 720 ad groups (format, audience, bidding) |
-| `Dim_LeadSource` | Dimension | 7 CRM lead sources |
-| `Dim_Customer` | Dimension | 7,500 customers with profile and geography |
-| `Dim_Product` | Dimension | 24 products |
-| `Fact_AdPerformance` | Fact | Channel · campaign · ad group · day |
-| `Fact_Lead` | Fact | One row per lead |
-| `Fact_Conversion` | Fact | One row per order |
-| `Funnel Stage` | Helper | Disconnected: Leads / Qualified / Converted for the funnel visual |
-| `_Measures` | Measure table | All 47 measures |
-
-**Relationships (16):** `Fact_AdPerformance` → Date, Channel, Campaign, AdGroup, Product · `Fact_Lead` → Date, Channel, Campaign, Product, LeadSource · `Fact_Conversion` → Date, Channel, Campaign, Product, LeadSource, Customer.
-
-**Why a dedicated `Dim_Date` in DAX:** the source files carry business dates only. A generated calendar covers exactly the model window, adds the **fiscal year (Sep–Aug)** and sorts months fiscally (Sep first). Auto date/time is switched off so there are no hidden date tables.
-
-**Which slices are safe for ratios**
-
-| Slice by | ROAS, CPL, CAC, Contribution | Note |
-|---|---|---|
-| Date, Channel, Campaign, Product | Valid | Shared by all three facts |
-| Ad Group | Ad metrics only | Filters `Fact_AdPerformance` only |
-| Lead Source | Leads and revenue only | Not on the spend fact |
-| Customer | Revenue and orders only | Not on the spend or lead fact |
-
-**Model hygiene:** raw measure-backing columns and ID/code columns are hidden; numeric attributes are set to *Don't summarize*; implicit measures are discouraged; display folders organise measures; model culture is en-US while the source query culture stays en-IN so parsing is unchanged.
-
----
-
-## 10. DAX measures
-
-47 measures in `_Measures`, grouped by display folder.
-
-| Folder | Measures |
-|---|---|
-| **01 Spend & Volume** | Total Spend, Total Impressions, Total Clicks, Total Reach |
-| **02 Cost Efficiency** | CTR %, CPC, CPM, CPL, CAC, Cost per Qualified Lead |
-| **03 Funnel & Conversion** | Total Leads, Qualified Leads, Converted Leads, Total Customers, Lead Qualification Rate, Qualified to Converted Rate, Lead to Customer Rate, Click to Lead Rate, Funnel Value, Funnel % of Leads |
-| **04 Revenue & ROI** | Total Orders, Gross Revenue, Net Revenue, Total Refunds, ROAS, Avg Order Value, Avg Revenue per Customer, Marketing Contribution |
-| **05 Time Comparison** | Total Spend / Net Revenue / Leads / Customers PY, ROAS PY, CAC PY, Spend / Net Revenue / Leads / Customers / CAC YoY %, ROAS YoY Change |
-| **06 KPI Context** | KPI Context Spend / Net Revenue / ROAS / Leads / Customers / CAC |
-| **07 Formatting** (hidden) | ROAS Status Color |
-
-**Patterns used**
-- Safe division with `DIVIDE`, so no divide-by-zero errors.
-- Prior year with `SAMEPERIODLASTYEAR` on `Dim_Date[Date]`, which works for fiscal year, quarter and month.
-- **YoY only when one fiscal year is in context** (`HASONEVALUE(Dim_Date[FiscalYear])`), so multi-year totals never show a misleading comparison.
-- KPI-card reference text built with `SWITCH(TRUE(), …)` and `FORMAT`: "▲ 4.2% vs prior FY", "No prior year" or "All fiscal years".
-- A disconnected `Funnel Stage` table plus `Funnel Value` (`SWITCH` on `SELECTEDVALUE`) to drive the funnel from three different measures.
-- Every measure has a description, a format string and a display folder.
-
----
-
-## 11. Report development
-
-I designed and built the whole report myself, from wireframe to final polish.
-
-### 11.1 Design process
-1. **Wireframe first.** One page per question: *What did we get? Who earns it? Where do we lose leads?*
-2. **Design system before visuals.** Colours, fonts, spacing and card style were defined once and applied everywhere.
-3. **Build from the model, not around it.** Visuals only use measures from `_Measures`; implicit measures are discouraged.
-4. **Accessibility from the start:** AA contrast, alt text on every visual, values never shown by colour alone.
-
-### 11.2 Design system: "Corporate Cool"
-- Cool-grey page `#F1F5F9`, white cards with 1px `#E2E8F0` border and 8px radius, slate text, Segoe UI.
-- **Signature rule: cyan = money back, slate = money out.** Revenue and return measures use cyan; spend and cost measures use slate. The code holds on every page.
-- Channel colours are fixed and colour-blind safe (Google `#0072B2`, Facebook `#E69F00`, Instagram `#CC79A7`, LinkedIn `#009E73`, Email `#D55E00`, SEO `#56B4E9`).
-- 1920 × 1080 canvas, 12 × 12 grid, 32px margin, 24px gutter; header band with title, page navigator and slicers on every main page.
-
-### 11.3 Pages
-
-**1. Executive Overview** – *"Every $1 of ad spend returned $1.55 in net revenue"*
-Six KPI cards (Spend, Net Revenue, ROAS, Leads, Customers, CAC) with prior-year context; monthly spend vs net revenue on one shared axis; spend vs net revenue by channel with a hover tooltip. Slicers: Fiscal Year, Channel.
-
-**2. Channels & Campaigns** – *"Paid media: $97.4M spend, ranked by return"*
-Profit/loss by channel (teal above zero, red below), campaign spend-vs-return matrix, per-channel monthly trends, CTR by ad format, and a campaign leaderboard with ROAS colour-coding. Slicers: Fiscal Year, Campaign Type.
-
-**3. Funnel & Customers** – *"47% of leads qualify, and 1 in 8 converts"*
-Lead funnel, qualification vs conversion by channel, revenue by customer segment, country and product category, top customers. Slicers: Fiscal Year, Channel, Product Category.
-
-**Hidden pages**
-
-| Page | Type | Content |
-|---|---|---|
-| Campaign Detail | Drill-through on `CampaignName` | Profile, six KPIs, monthly trend, the campaign's funnel, ad-group table |
-| Customer Detail | Drill-through on `CustomerName` | Profile rail, four KPIs, monthly revenue, order history |
-| Channel Tooltip | Report-page tooltip | Channel spend, revenue, ROAS, CAC and trend on hover |
-
-### 11.4 Interactivity
-- **Page navigator** on all main pages; **Back** button on drill-through pages.
-- **Right-click drill-through** from any campaign or customer.
-- **Synced slicers:** Fiscal Year across all three main pages; Channel across Executive Overview and Funnel & Customers.
-- **Edited interactions:** customer-based visuals do not filter the lead funnel, because customer attributes do not reach `Fact_Lead` and the funnel would appear unchanged and misleading.
-
-### 11.5 Design decisions made along the way
-- **Channel ranking uses Marketing Contribution, not ROAS**, because SEO has $0 spend and Email almost none.
-- **Two funnels rather than one**, because impressions (billions) and customers (thousands) cannot share a scale.
-- **Fiscal year instead of calendar year**, because 2023 and 2026 are partial calendar years.
-- **Combo chart for per-channel trends**: a plain line chart rendered as a blank placeholder in the Desktop build used.
-- **$M / $K display units in tables**, so numbers read the same regardless of the viewer's Windows locale.
-
-### 11.6 Report generation
-Pages are generated by a Node.js script from the approved spec, which keeps layout, alignment and styling consistent across about 60 visuals. Structural changes are made in the spec and script, then regenerated, not by hand-editing visual files.
-
----
-
-## 12. Key results and insights from the model
-
-> **How these figures were produced:** calculated directly from the project's source files using the same logic as the model (spend from ad exports, leads from the CRM export, orders attributed to channel and campaign through their source lead, fiscal year = Sep–Aug). The overall totals match the model's validation baseline exactly ($97,364,735 spend, $150,944,966 net revenue, 4,202 customers). Rates are shown to one decimal place.
-
-### 12.1 Overall performance (Sep 2023 – Aug 2026)
-
-| Metric | Value |
-|---|---|
-| Total Spend | $97,364,735 |
-| Net Revenue | $150,944,966 |
-| Gross Revenue | $154,885,248 |
-| **ROAS** | **1.55x** |
-| **Marketing Contribution** | **$53,580,231** |
-| Impressions | 2,726,971,427 |
-| Clicks | 65,296,970 |
-| CTR | 2.4% |
-| CPC | $1.49 |
-| CPM | $35.70 |
-| Leads | 48,000 |
-| Qualified Leads | 22,367 (46.6%) |
-| Converted Leads | 6,000 (12.5% of leads, 26.8% of qualified) |
-| Customers (distinct) | 4,202 |
-| Orders | 6,000 |
-| Average Order Value | $25,157 |
-| Average Revenue per Customer | $35,922 |
-| Refunds | $2,175,803 (1.4% of gross revenue) |
-
-### 12.2 Channel scorecard (all three fiscal years)
-
-| Channel | Spend | Net Revenue | Contribution | ROAS | Leads | Qualified % | Qualified → Converted | CPL | CAC |
-|---|---|---|---|---|---|---|---|---|---|
-| Email | $0.47M | $45.24M | **+$44.77M** | 97.2x | 4,920 | 59.1% | 37.2% | $95 | $721 |
-| LinkedIn | $15.78M | $50.87M | **+$35.08M** | 3.22x | 5,920 | 62.0% | 29.0% | $2,666 | $18,332 |
-| SEO | $0 | $6.24M | **+$6.24M** | n/a | 5,760 | 49.2% | 26.4% | n/a | n/a |
-| Facebook | $17.16M | $10.08M | **−$7.08M** | 0.59x | 11,310 | 35.5% | 22.5% | $1,517 | $20,904 |
-| Instagram | $13.97M | $2.24M | **−$11.73M** | 0.16x | 6,660 | 29.7% | 16.8% | $2,097 | $42,067 |
-| Google Ads | $49.99M | $36.29M | **−$13.70M** | 0.73x | 13,430 | 51.8% | 26.9% | $3,722 | $29,986 |
-
-### 12.3 Year-on-year (fiscal years)
-
-| Fiscal year | Spend | Net Revenue | ROAS | Leads | Customers | CAC |
-|---|---|---|---|---|---|---|
-| FY24 (Sep 23 – Aug 24) | $30.45M | $41.41M | 1.36x | 14,965 | 1,558 | $19,546 |
-| FY25 (Sep 24 – Aug 25) | $33.71M | $55.63M | 1.65x | 16,383 | 1,720 | $19,597 |
-| FY26 (Sep 25 – Aug 26) | $33.21M | $53.90M | 1.62x | 16,652 | 1,841 | $18,037 |
-
-| Change | Spend | Net Revenue | ROAS | Leads | Customers | CAC |
-|---|---|---|---|---|---|---|
-| FY25 vs FY24 | +10.7% | +34.3% | +21.4% | +9.5% | +10.4% | +0.3% |
-| FY26 vs FY25 | −1.5% | −3.1% | −1.6% | +1.6% | +7.0% | −8.0% |
-
-> Customers are counted as distinct per fiscal year, so the three yearly figures add up to more than the 4,202 distinct customers overall (the same customer can order in several years).
-
-### 12.4 What the data says
-
-1. **The headline hides a split portfolio.** The 1.55x overall return comes from three channels earning **+$86.1M** (Email, LinkedIn, SEO) while three channels lose **−$32.5M** (Google Ads, Instagram, Facebook).
-2. **The biggest budget earns the least.** Google Ads takes **51% of all spend** ($50.0M) and returns 0.73x, the largest single loss in the portfolio.
-3. **LinkedIn is expensive per lead but still the best paid channel.** Its CPL ($2,666) is not the lowest, but each customer is worth about **$59K** in net revenue versus $6.7K for Instagram, $12.3K for Facebook and $21.8K for Google. That is why it returns 3.22x.
-4. **Volume is not quality.** Facebook produces 23.6% of all leads (11,310) at the cheapest paid CPL ($1,517), but only **35.5%** qualify and 22.5% of those convert. Instagram is weaker still (29.7% and 16.8%).
-5. **Email is the efficiency leader, with a caution:** its revenue is mostly retention and renewal, so it monetises an existing base and does not prove it can scale new acquisition.
-6. **Return improved strongly in FY25 and then held.** ROAS rose from 1.36x to 1.65x (revenue +34% on spend +11%), then eased to 1.62x in FY26. In FY26 CAC fell 8.0% to $18,037 while customers grew 7.0%.
-7. **Most campaigns do not pay back.** Of the 199 campaigns that had media spend, **127 (64%) returned less than $1 per $1**, and 72 returned more.
-8. **Best and worst campaigns**
-
-   | Best contribution | Channel | Contribution | ROAS |
-   |---|---|---|---|
-   | Singapore CRM Enterprise Customer Retention | Email | +$22.6M | 197x |
-   | India CRM Migration Service Customer Retention | Email | +$7.9M | 70x |
-   | United States CRM Enterprise Pipeline Generation | LinkedIn | +$6.9M | 4.9x |
-   | Germany Enterprise Analytics Lead Generation | LinkedIn | +$6.6M | 4.8x |
-
-   | Worst contribution | Channel | Contribution | ROAS |
-   |---|---|---|---|
-   | India Email Marketing Suite Customer Acquisition Q3 2023 | Google Ads | −$3.2M | 0.32x |
-   | India Data Connector Pack Lead Generation Q3 2023 | Google Ads | −$2.3M | 0.51x |
-   | India CRM Starter Brand Awareness Q3 2023 | Facebook | −$2.2M | 0.20x |
-   | France CRM Starter Brand Awareness Q3 2023 | Instagram | −$2.1M | 0.08x |
-
-9. **Ad format matters for attention.** Search text, responsive search and display banner ads all reach about **3.8% CTR**, while carousel and lead-form ads sit at about **1.6%**. Search clicks cost about $2.50 and carousel clicks about $1.18, so the cheaper click is also the less engaged one.
-
-### 12.5 Who the revenue comes from
-
-| By customer segment | Net Revenue | Share |
-|---|---|---|
-| Enterprise | $68.47M | 45.4% |
-| Mid-Market | $48.24M | 32.0% |
-| SMB | $27.05M | 17.9% |
-| Micro Business | $7.19M | 4.8% |
-
-| By country | Net Revenue | Share |
-|---|---|---|
-| United States | $28.37M | 18.8% |
-| India | $28.23M | 18.7% |
-| Germany | $18.42M | 12.2% |
-| United Kingdom | $14.89M | 9.9% |
-| Australia | $13.71M | 9.1% |
-| Canada | $13.52M | 9.0% |
-
-| By product category | Net Revenue | Share |
-|---|---|---|
-| Software Subscription | $87.65M | 58.1% |
-| Professional Service | $48.66M | 32.2% |
-| Add-On | $14.64M | 9.7% |
-
-- **Enterprise customers deliver 45% of revenue** from 814 accounts, while 1,444 SMB accounts deliver 18%.
-- **Revenue is not concentrated in a few accounts:** the top 10 customers hold only **5.4%** of net revenue. The largest, Nova Technology Works, is $1.17M.
-- **New business is only about a quarter of revenue.** New Purchase orders are $40.5M (26.8%); Renewal is $32.0M (21.2%) and Upsell $23.0M (15.2%). Spend therefore feeds a customer base that keeps paying, not just first purchases.
-
-### 12.6 Data-quality finding that needs a business decision
-
-Order status in the sales export is **Completed 5,710, Refunded 123, Pending 105, Cancelled 62**. The 290 orders that are not completed carry **$7.2M** of net revenue (4.8%):
-
-| Status | Orders | Net Revenue |
-|---|---|---|
-| Completed | 5,710 | $143.74M |
-| Refunded | 123 | $3.06M |
-| Pending | 105 | $2.71M |
-| Cancelled | 62 | $1.44M |
-
-The model currently counts all of them, which is why the baseline is $150.9M. If the business decides that only *Completed* orders count, ROAS falls from 1.55x to about **1.48x**, and the change is a filter in the revenue measures. This is logged as an open decision, not changed silently.
-
-### 12.7 Recommendations I would take to the client
-1. **Rebalance Google Ads spend.** Pause or cut the campaigns below 1.0x (the worst are Q3 2023 campaigns, led by India) and move budget toward what already earns back.
-2. **Scale LinkedIn enterprise campaigns** in the US, Germany and UK, where return is above 4.5x, while watching CAC.
-3. **Protect and extend Email retention programs**, and test whether the same approach can support acquisition.
-4. **Fix lead quality at Facebook and Instagram** (targeting, form design, qualification criteria) before adding budget, or treat them strictly as awareness channels and judge them on CPM and reach.
-5. **Track completed-order revenue** alongside net revenue once the status rule is agreed.
-6. **Add gross margin and sales cost** in a later version, so ROAS can be turned into true profitability.
-
----
-
-## 13. Power BI Service: deployment, RLS, refresh, sharing
-
-> 📘 **Delivery runbook.** This section is the configuration I apply on a client engagement. It describes the intended setup for this project; it is not yet configured in a live workspace.
-
-### 13.1 Workspace strategy
-
-| Workspace | Purpose | Who has access | Source |
-|---|---|---|---|
-| `MROI – Dev` | Build and unit test | Developers (Admin / Member) | `develop` branch via Git integration |
-| `MROI – Test` | Testing and RLS validation | Developers (Admin / Member), test accounts (Viewer) | Deployment pipeline from Dev |
-| `MROI – Prod` | Live reporting | Developers (Admin), end users via app only | Deployment pipeline from Test |
-
-- Workspaces use a licensed capacity as agreed with the client (Pro, Premium Per User or Fabric/Premium).
-- Dev is connected to the Azure DevOps repo (`powerbi/` folder); Test and Prod receive content only through the pipeline, never by manual upload.
-
-### 13.2 Release flow (Dev → Test → Prod)
-1. Developer works on a `feature/*` branch and opens a pull request into `develop`.
-2. After review and merge, the Dev workspace syncs from Git.
-3. **Deployment pipeline** promotes Dev → Test.
-4. **Deployment rules** switch data-source parameters per stage: `p_SourceRoot` points to the stage's source folder.
-5. Testing (totals, RLS, refresh) is performed in Test.
-6. Once the checks pass, the pipeline promotes Test → Prod and `develop` is merged to `main`.
-7. A release note and version tag are recorded.
-
-### 13.3 Data gateway and credentials
-- Because the source is a file share, an **on-premises data gateway** (standard mode) is installed on a server that can read `p_SourceRoot`, run under a service account, with a recovery key stored in the client's password vault. If the files move to SharePoint or ADLS, the gateway is no longer required.
-- Data-source credentials are set in dataset settings (Windows authentication for the file share).
-- Gateway access is limited to the dataset owners and the IT team; a second gateway member is added for resilience.
-
-### 13.4 Row-level security (RLS)
-
-**Why:** regional and channel managers must only see their own results; executives see everything (BR-07).
-
-**Design:** security filters sit on dimensions that every fact table joins to, so one filter protects spend, leads and revenue together.
-
-| Role | Table filter (DAX) | Who |
-|---|---|---|
-| `Executive` | none | CMO, Marketing Director, analysts |
-| `Regional Manager` | `Dim_Campaign[GlobalRegion] = <user's region>` | Regional marketing managers |
-| `Channel Manager` | `Dim_Channel[ChannelName] = <user's channel>` | Channel owners |
-
-Dynamic variant, using a small user-access mapping table (user email → region / channel), joined to the dimension:
-
-```dax
--- Role: Regional Manager (applied on the mapping table, which filters Dim_Campaign)
-[UserEmail] = USERPRINCIPALNAME ()
-```
-
-**Steps**
-1. Create roles in Desktop (Modeling → Manage roles) and add the filters.
-2. Test with **View as role**, including *Other user* to impersonate a real manager.
-3. Publish, then assign **Microsoft Entra security groups** to each role in the dataset's Security page (groups, not individuals).
-4. Confirm that workspace Admin / Member / Contributor roles bypass RLS, so end users are given **app access or Viewer only**.
-5. Re-test in Test with real test accounts before release.
-
-**Known behaviour to document for the client**
-- Customer attributes have no direct path from `Dim_Campaign`; customer data is restricted through the facts, which carry `CampaignKey`.
-- Totals in the report are *the user's* total, not the company total; this is stated on the report footer so no one mistakes it for an error.
-
-### 13.5 Incremental refresh
-
-**Why:** three years of history grows every month. Reloading everything daily wastes time and capacity (BR-09).
-
-**Foundation (✅ built):** `RangeStart` and `RangeEnd` parameters exist, and each fact filters its date column between them.
-
-**Policy (📘 applied in Desktop, per fact table):**
-
-| Setting | `Fact_AdPerformance` | `Fact_Lead` | `Fact_Conversion` |
-|---|---|---|---|
-| Archive data starting | 36 months before refresh date | 36 months | 36 months |
-| Incrementally refresh data starting | 10 days before refresh date | 30 days | 30 days |
-| Detect data changes | Yes, on a last-modified column if available | Yes | Yes |
-| Only refresh complete periods | Yes | Yes | Yes |
-
-**Notes I record for the client**
-- Reasoning for the windows: ad platforms restate recent days, so ad data gets a short rolling window; leads and orders can be updated by CRM for a month.
-- With a **folder source**, the date filter does not fold, so every file is still read and filtered in the mashup engine. The benefit is then limited to *what is loaded and processed into the model*. Moving the exports to a **database, SharePoint library or data lake** would give the full benefit, and the parameters are already in place for that.
-- The first refresh in the Service builds all partitions and is the slowest; later refreshes only touch the incremental window.
-- `Dim_Date` is a fixed range in DAX; it must be extended before the data passes Aug 2026 (tracked as a maintenance task).
-
-### 13.6 Scheduled refresh and monitoring
-- **Schedule:** daily at 05:30 local time, after the overnight exports land; a second refresh at 13:30 if the business needs an afternoon update (Pro allows 8 per day).
-- **Failure notifications** to the dataset owner and the BI support mailbox.
-- **Refresh history** reviewed during hypercare; failures are logged as bugs in Azure Boards.
-- **Common failure causes and what I check first:** gateway offline, expired credentials, a source file renamed or open/locked, a new file with a different column layout, or `p_SourceRoot` pointing to the wrong stage.
-- **Capacity:** the dataset size and refresh duration are noted after the first full refresh to confirm they fit the capacity.
-
-### 13.7 Sharing with the client
-1. Build a **Power BI app** from the Prod workspace: navigation with the three main pages, branded name and description.
-2. Create **audiences**: *Executives* (all pages), *Managers* (all pages, RLS applies), *Analysts* (all pages plus the dataset for self-service, **Build** permission).
-3. Grant access through **security groups**, not individual users.
-4. Apply a **sensitivity label** if the client uses Microsoft Purview.
-5. Turn off *Export data* / *Download* where the client requires it, and keep the dataset **certified** or **promoted** so analysts connect to the governed model rather than copies.
-6. Send an install link and a one-page "how to read this report" guide.
-
-### 13.8 Handover and hypercare
-- **Documentation:** this README, the data model and measure catalog, KPI definitions, runbook for refresh failures, RLS maintenance guide (how to add a manager).
-- **Training:** a 60-minute walkthrough for managers (filters, drill-through, tooltips) and a 90-minute session for analysts (model, measures, extending the report).
-- **Hypercare:** two weeks of monitoring refreshes and fixing defects, then transfer to the client's BI support team.
-- **Ownership matrix:** dataset owner, report owner, gateway owner, RLS administrator, escalation contact.
-
----
-
-## 14. Testing and validation
-
-### 14.1 Reconciliation baseline (✅)
-After a full refresh the model must reproduce:
-
-| Check | Expected |
-|---|---|
-| Ad rows | 360,000 |
-| Total Spend | $97,364,735 |
-| Total Impressions | 2,726,971,427 |
-| Total Clicks | 65,296,970 |
-| Total Leads | 48,000 |
-| Qualified Leads | 22,367 |
-| Total Orders | 6,000 |
-| Distinct Customers | 4,202 |
-| Gross Revenue | $154,885,248 |
-| Net Revenue | $150,944,966 |
-| `Dim_Date` rows | 1,096 |
-
-Plus: Net Revenue by fiscal year splits into three different values (proves revenue filters by date); the three fiscal-year spend totals add up to $97,364,735; every `val_*` query returns zero rows.
-
-### 14.2 Test checklist
-
-| Area | Test |
-|---|---|
-| Data | Row counts and totals match the baseline |
-| Model | No inactive or ambiguous relationships; hidden columns; formats |
-| Measures | Spot-check each ratio against a manual calculation |
-| Time intelligence | FY25 and FY26 show prior-year context; FY24 shows "No prior year" |
-| Report | Slicers sync; drill-through passes the right filter; Back works; tooltips open |
-| Interactions | Customer visuals do not alter the lead funnel |
-| Accessibility | Alt text on all visuals, keyboard tab order, contrast |
-| 📘 RLS | Each role sees only its own region/channel; executives see all; totals differ as expected |
-| 📘 Refresh | Manual and scheduled refresh succeed; incremental partitions created |
-| 📘 Performance | Pages load in a few seconds; checked with Performance Analyzer |
-
----
-
-## 15. What I did as the Power BI analyst
-
-- **Requirements:** captured the business question, stakeholders, KPIs and scope; turned them into traceable requirements and acceptance criteria.
-- **Source analysis:** profiled nine source folders, mapped keys and grain, and identified data-quality risks before building.
-- **Power Query:** designed the parameterised, layered query architecture; built folder combines, merges, append, key generation, last-touch attribution and validation queries; diagnosed and fixed refresh failures.
-- **Data modelling:** designed a star schema with shared dimensions across three facts; documented which ratios are valid by which dimensions.
-- **DAX:** wrote 47 measures including time intelligence and KPI-context text, with descriptions, formats and display folders; built the fiscal-year date dimension.
-- **Report design and build:** defined the design system, built three pages, two drill-throughs and a tooltip, with interaction rules and accessibility.
-- **Version control:** structured the project as PBIP (TMDL and PBIR) for reviewable diffs and a pull-request workflow.
-- **Service delivery (runbook):** designed workspaces, deployment pipeline, gateway, RLS, incremental and scheduled refresh, app audiences and handover.
-- **Documentation:** requirements, model, KPI definitions, design spec, decisions log and this README.
-
----
-
-## 16. What I gained from this project
-
-### 16.1 Technical skills
-- **Power Query at scale:** parameter-driven folder combines, Transform-Sample-File helpers, multi-step merges, append, surrogate and date-key creation, `try … otherwise` hardening, and Left Anti-join validation across ~437K source rows.
-- **Dimensional modeling:** choosing grain, designing a galaxy schema with three facts sharing dimensions, and understanding which ratios are valid across fact tables.
-- **DAX:** time intelligence with a fiscal calendar, "only when one year is selected" logic, text measures for KPI cards, a disconnected helper table to drive a funnel, and measure organisation.
-- **Report engineering:** PBIR/TMDL project format, theme and design-system work, drill-through, tooltip pages, slicer syncing and edited interactions.
-- **Source control for BI:** treating a Power BI project as code (text diffs, branches, pull requests, generator scripts) instead of an opaque `.pbix` file.
-- **Service-side practice (planned and documented):** RLS design, incremental-refresh policy, gateway, deployment pipelines and app distribution, written as the runbook I would follow for a client.
-
-### 16.2 Analytical and domain skills
-- Reading a marketing funnel end to end, and knowing why CPL, CAC, ROAS and contribution answer different questions.
-- Understanding **attribution** and its limits, and being explicit about the rule used.
-- Spotting when a headline metric hides a split underneath (a 1.55x portfolio made of three winners and three losers).
-- Choosing the right metric for the situation: contribution instead of ROAS for free channels, fiscal year instead of calendar year, two funnels instead of one.
-- Telling a story with numbers and turning findings into recommendations rather than just charts.
-
-### 16.3 Consulting and delivery skills
-- Starting from the business question, stakeholders and scope, then tracing each requirement to a visual.
-- Writing KPI definitions the business agrees to before building.
-- Documenting decisions, assumptions, caveats and open questions (such as the order-status rule) instead of hiding them.
-- Planning a full release path: environments, security, refresh and sharing, not only the report.
-
-### 16.4 Problem-solving experience
-Real failures that taught practical lessons: a refresh broken by hard-coded paths, 144K null keys caused by 18-digit IDs read as numbers, revenue that would not filter by date because of a text-versus-number key, a model emptied by editing files while Desktop was open, and a chart type that rendered blank. Each is now a rule in this document.
-
-### 16.5 What I would do differently or next
-- Move the source files from a folder to SharePoint, a data lake or a database so incremental refresh can fold and the gateway is no longer needed.
-- Add budget and target tables to compare plan against actual.
-- Add gross margin, so ROAS becomes profit, and a multi-touch attribution view to compare against last-touch.
-- Add automated tests (DAX query checks on totals) to the pull-request pipeline.
-
----
-
-## 17. Decisions, issues and lessons learned
-
-| Topic | Decision or lesson |
-|---|---|
-| Folder-based source | Keeps Power Query visible and mirrors small/mid-size marketing reality |
-| Date table in DAX | Source has business dates only; the calendar is built for the exact window |
-| Fiscal year | Calendar years in the data are partial; fiscal years give three complete years |
-| V1 scope | Budget/target facts, multi-product orders and payment history were deliberately left out |
-| Cross-fact ratios | Spend, leads and revenue are in different facts, so ratios are limited to shared dimensions |
-| Text IDs | Large numeric IDs must be text to avoid truncation |
-| Type alignment | Fact date keys and `Dim_Date[DateKey]` must have identical types or time filtering silently fails |
-| Editing TMDL | Editing model files while Desktop is open has emptied the model before; close Desktop first |
-| Rendering | A plain line chart showed blank in the Desktop build used; the combo chart was used instead |
-| Locale | Display follows the viewer's Windows locale; $M/$K units keep tables consistent |
-| Open decision | Whether customers and revenue should count completed orders only (`ConversionStatus`) is pending business confirmation |
-
----
-
-## 18. Project status
-
-| Area | Status |
-|---|---|
-| Requirements, scope, KPIs | ✅ |
-| Source analysis and folder contract | ✅ |
-| Power Query (parameters, source, staging, validation, dimensions, facts) | ✅ |
-| Semantic model, relationships, `Dim_Date`, 47 measures | ✅ |
-| Report: 3 pages, 2 drill-throughs, tooltip, theme | ✅ |
-| Incremental-refresh parameters and fact filters | ✅ |
-| Azure DevOps repo, branching and PR policy | 📘 |
-| Workspaces, deployment pipeline, gateway | 📘 |
-| RLS roles and group assignment | 📘 |
-| Incremental refresh policy and scheduled refresh | 📘 |
-| App publishing, client sharing, hypercare | 📘 |
-
-**Remaining items:** final visual review in Desktop and screenshots in `docs/images/`; confirm the `ConversionStatus` rule with the business; extend `Dim_Date` before the data passes Aug 2026.
-
----
-
-*Data is synthetic and used for portfolio purposes. Released under the MIT License (see LICENSE).*
+**Live Power BI Report:**  
+[View Interactive Dashboard](https://app.fabric.microsoft.com/view?r=eyJrIjoiM2I4NjQ3OGUtOWU3OC00NjQ0LWIzMzYtNTdhMGU0ZmI2NzliIiwidCI6ImQ4ZTFiMDVlLTcwYWEtNGVmNy1iODc4LTQ2NmI2ODhmOTUyZiJ9)
